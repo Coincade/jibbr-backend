@@ -27,7 +27,7 @@ model User {
 }
 
 model Workspace {
-  id            String   @id @default(uuid())
+  id            String   @id @default(cuid())
   name          String   @db.VarChar(191)
   allowedDomain String?  @db.VarChar(191)
   JoinCode      String   @db.VarChar(6)
@@ -35,6 +35,4 @@ model Workspace {
   admin         User     @relation(fields: [adminId], references: [id])
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
-
-  @@unique([id])
 }

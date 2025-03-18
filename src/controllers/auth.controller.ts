@@ -24,11 +24,11 @@ export const register = async (req: Request, res: Response) => {
         payload.password = await bcrypt.hash(payload.password, salt);
 
         const token = await bcrypt.hash(uuidv4(), salt);
-        const url = `${process.env.APP_URL}/verify-email?email=${payload.email}&token=${token}`;
+        const url = `${process.env.APP_URL}/api/verify/verify-email?email=${payload.email}&token=${token}`;
         const emailBody = await renderEmailEjs("email-verify", {name: payload.name, url});
 
         //Send Email
-        await emailQueue.add(emailQueueName, {to: payload.email, subject: "Jibbr | Verify your email", html: emailBody});
+        await emailQueue.add(emailQueueName, {to: payload.email, subject: "Jibbr | Verify your email", body: emailBody});
 
         await prisma.user.create({
             data:{
