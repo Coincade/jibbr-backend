@@ -8,7 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const envPath = path.join(__dirname, '../.env');
 
-console.log('Loading env from:', envPath);
+// console.log('Loading env from:', envPath);
 dotenv.config({ path: envPath });
 
 // Debug log
@@ -26,7 +26,9 @@ if (!process.env.SMTP_USER || !process.env.SMTP_PASSWORD) {
 import express, { Application, Request, Response } from "express";
 import cors from "cors";
 import ejs from "ejs";
-import { sendEmail } from "./config/mail.js";
+import authRoutes from "./routes/auth.route.js";
+import messageRoutes from "./routes/message.route.js";
+import verifyRoutes from "./routes/verify.route.js";
 
 const app: Application = express();
 
@@ -35,6 +37,10 @@ const PORT = process.env.PORT || 7000;
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+app.use("/api/auth", authRoutes);
+app.use("/api/messages", messageRoutes);
+app.use("/api/verify", verifyRoutes);
 
 //Set view engine
 app.set('view engine', 'ejs');
@@ -52,7 +58,7 @@ app.get("/", async(req: Request, res: Response) => {
     res.json({
       msg: "Email sent successfully"
     });
-  } catch (error) {
+  } catch (error : any) {
     console.error('Error in route handler:', error);
     res.status(500).json({
       error: "Failed to send email",
