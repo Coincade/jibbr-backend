@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
-import { loginSchema, registerSchema } from "../validation/auth.validations.js";
+import { forgetPasswordSchema, loginSchema, registerSchema, resetPasswordSchema } from "../validation/auth.validations.js";
 import { ZodError } from "zod";
-import { formatError, renderEmailEjs } from "../helper.js";
+import { checkDateHourDiff, formatError, renderEmailEjs } from "../helper.js";
 import prisma from "../config/database.js";
 import bcrypt from "bcrypt";
 import { v4 as uuidv4 } from "uuid";
@@ -156,4 +156,96 @@ export const getUser = async (req: Request, res: Response) => {
     return res.status(422).json({message: "User Not Found"});
   }
   res.status(200).json({data: user});
+}
+
+export const forgetPassword = async (req: Request, res: Response) => {
+  try {
+    const body = req.body;
+    const payload = forgetPasswordSchema.parse(body);
+
+    const user = await prisma.user.findUnique({where: { email: payload.email }})
+
+    if(!user || user === null) {
+      return res.status(422).json({message: "User not found", errors: {email: "User not found with this email"}})
+    }
+
+   const salt = await bcrypt.genSalt(10);
+   const token = await bcrypt.hash(uuidv4(), salt);
+   await prisma.user.update({
+    data:{
+      password_reset_token: token,
+      token_send_at: new Date().toISOString()
+    },
+    where:{ email: payload.email}
+   })
+   const url = `${process.env.CLIENT_APP_URL}/reset-password?email=${payload.email}&token=${token}`;
+
+   const html = await renderEmailEjs("forget-password", {
+    url,
+   });
+
+   await emailQueue.add(emailQueueName, {
+    to: payload.email,
+    subject: "Jibbr | Reset Password",
+    body: html,
+   });
+
+   return res.status(200).json({message: "Password reset email sent"})
+  } catch (error) {
+    // console.log("Error in forgetPassword controller:", error);
+    if (error instanceof ZodError) {
+      const errors = formatError(error);
+      res.status(422).json({ message: "Invalid data", errors });
+    }
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const resetPassword = async (req: Request, res: Response) => {
+  try{
+    const body = req.body;
+    const payload = resetPasswordSchema.parse(body);
+
+    const user = await prisma.user.findUnique({where: { email: payload.email }})
+
+    if(!user || user === null) {
+      return res.status(422).json({message: "User not found", errors: {email: "User not found with this email"}})
+    }
+
+    //Check token
+    if(user.password_reset_token !== payload.token) {
+      return res.status(422).json({message: "User not found", errors: {email: "Token is invalid"}})
+    }
+
+    //Check token expiration for 2 hrs time frame
+    const hoursDiff = checkDateHourDiff(user.token_send_at!);
+    if(hoursDiff > 2) {
+      return res.status(422).json({message: "Token expired", errors: {email: "Token expired"}})
+    }
+
+    //Update password
+    const salt = await bcrypt.genSalt(10);
+    const newPass = await bcrypt.hash(payload.password, salt); 
+
+    await prisma.user.update({
+      data: {
+        password: newPass,
+        password_reset_token: null,
+        token_send_at: null,
+      },
+      where: { email: payload.email },
+    });
+
+    return res.status(200).json({message: "Password reset successfully"})
+    
+    
+  }
+  catch (error) {
+    // console.log("Error in resetPassword controller:", error);
+    if (error instanceof ZodError) {
+      const errors = formatError(error);
+      res.status(422).json({ message: "Invalid data", errors });
+    }
+    return res.status(500).json({ message: "Internal server error" });
+  }
 }

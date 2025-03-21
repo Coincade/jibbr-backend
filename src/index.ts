@@ -29,7 +29,7 @@ import ejs from "ejs";
 import authRoutes from "./routes/auth.route.js";
 import messageRoutes from "./routes/message.route.js";
 import verifyRoutes from "./routes/verify.route.js";
-
+import { appLimiter } from "./config/rateLimit.js";
 const app: Application = express();
 
 const PORT = process.env.PORT || 7000;
@@ -45,6 +45,9 @@ app.use("/api/verify", verifyRoutes);
 //Set view engine
 app.set('view engine', 'ejs');
 app.set('views', path.resolve(__dirname, './views'));
+
+// * Rate Limiter
+app.use(appLimiter);
 
 app.get("/", async(req: Request, res: Response) => {
   try {
