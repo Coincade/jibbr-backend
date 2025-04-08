@@ -103,5 +103,34 @@ export const getWorkspace = async (req: Request, res: Response) => {
   }
 };
 
+export const getAllWorkspacesForUser = async (req: Request, res: Response) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(422).json({ message: "User not found" });
+    }
+    const workspaces = await prisma.workspace.findMany({
+      where: {
+        OR: [
+          { userId: user.id },
+          {
+            members: {
+              some: {
+                userId: user.id
+              }
+            }
+          }
+        ]
+      },
+    });
+    return res.status(200).json({ message: "Workspaces fetched successfully", data: workspaces });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      const errors = formatError(error);
+      return res.status(422).json({ message: "Invalid data", errors });
+    }
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
 
 
