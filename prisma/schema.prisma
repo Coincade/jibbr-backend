@@ -27,6 +27,7 @@ model User {
   email_verify_token   String?
   workspaces    Workspace[]
   members       Member[]
+  channelMembers ChannelMember[]
 }
 
 model Workspace {
@@ -58,6 +59,7 @@ model Channel {
   workspaceId String
   workspace   Workspace   @relation(fields: [workspaceId], references: [id])
   messages    Message[]
+  members     ChannelMember[]
 }
 
 model Message {
@@ -85,4 +87,17 @@ model Member {
   user        User      @relation(fields: [userId], references: [id])
   role        Role
   isActive    Boolean   @default(true)
+}
+
+model ChannelMember {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt @default(now())
+  channelId   String
+  channel     Channel   @relation(fields: [channelId], references: [id])
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  isActive    Boolean   @default(true)
+
+  @@unique([channelId, userId])
 }

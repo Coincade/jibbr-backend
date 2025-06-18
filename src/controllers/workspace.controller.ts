@@ -34,12 +34,36 @@ export const createWorkspace = async (req: Request, res: Response) => {
       },
     });
 
-    await prisma.channel.create({
+    // Create General channel (PUBLIC)
+    const generalChannel = await prisma.channel.create({
+      data: {
+        name: "General",
+        workspaceId: workspace.id,
+        type: "PUBLIC",
+      },
+    });
+
+    // Create TownHall channel (ANNOUNCEMENT)
+    const townHallChannel = await prisma.channel.create({
       data: {
         name: "TownHall",
         workspaceId: workspace.id,
         type: "ANNOUNCEMENT",
       },
+    });
+
+    // Add workspace creator to both channels
+    await prisma.channelMember.createMany({
+      data: [
+        {
+          userId: user.id,
+          channelId: generalChannel.id,
+        },
+        {
+          userId: user.id,
+          channelId: townHallChannel.id,
+        },
+      ],
     });
 
     return res.status(201).json({
@@ -219,6 +243,28 @@ export const joinWorkspace = async (req: Request, res: Response) => {
         role: "MEMBER",
       },
     });
+
+    // Get the default channels (General and TownHall)
+    const defaultChannels = await prisma.channel.findMany({
+      where: {
+        workspaceId: workspace.id,
+        name: {
+          in: ["General", "TownHall"]
+        }
+      }
+    });
+
+    // Add user to both default channels
+    if (defaultChannels.length > 0) {
+      await prisma.channelMember.createMany({
+        data: defaultChannels.map(channel => ({
+          userId: user.id,
+          channelId: channel.id,
+        })),
+        skipDuplicates: true, // Skip if user is already a member
+      });
+    }
+
     return res.status(200).json({ message: "Joined workspace successfully", data: member });
   } catch (error) {
     if (error instanceof ZodError) {  

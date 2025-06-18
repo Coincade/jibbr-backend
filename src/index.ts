@@ -30,6 +30,7 @@ import authRoutes from "./routes/auth.route.js";
 import messageRoutes from "./routes/message.route.js";
 import verifyRoutes from "./routes/verify.route.js";
 import workspaceRoutes from "./routes/workspace.route.js";
+import channelRoutes from "./routes/channel.route.js";
 import { appLimiter } from "./config/rateLimit.js";
 const app: Application = express();
 
@@ -43,6 +44,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/verify", verifyRoutes);
 app.use("/api/workspace", workspaceRoutes);
+app.use("/api/channel", channelRoutes);
 
 //Set view engine
 app.set('view engine', 'ejs');
