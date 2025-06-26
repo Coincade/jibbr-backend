@@ -14,6 +14,11 @@ const joinChannelSchema = z.object({
   channelId: z.string()
 });
 
+const addMemberToChannelSchema = z.object({
+  userId: z.string(),
+  channelId: z.string()
+});
+
 export const createChannel = async (req: Request, res: Response) => {
   try {
     const user = req.user;
@@ -227,6 +232,110 @@ export const joinChannel = async (req: Request, res: Response) => {
     return res.status(200).json({
       message: "Joined channel successfully",
       data: channelMember
+    });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      const errors = formatError(error);
+      return res.status(422).json({ message: "Invalid data", errors });
+    }
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const addMemberToChannel = async (req: Request, res: Response) => {
+  console.log("addMemberToChannel function called");
+  
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(422).json({ message: "User not found" });
+    }
+
+    const body = req.body;
+    const payload = addMemberToChannelSchema.parse(body);
+
+    // Get the channel
+    const channel = await prisma.channel.findUnique({
+      where: {
+        id: payload.channelId
+      },
+      include: {
+        workspace: true
+      }
+    });
+
+    if (!channel) {
+      return res.status(404).json({ message: "Channel not found" });
+    }
+
+    // Check if the channel is private
+    if (channel.type !== "PRIVATE") {
+      return res.status(400).json({ message: "Can only add members to private channels" });
+    }
+
+    // Check if the requesting user is a member of the workspace
+    const requestingMember = await prisma.member.findFirst({
+      where: {
+        userId: user.id,
+        workspaceId: channel.workspaceId,
+        isActive: true
+      }
+    });
+
+    if (!requestingMember) {
+      return res.status(403).json({ message: "You are not a member of this workspace" });
+    }
+
+    // Check if the requesting user is a member of the channel
+    const requestingChannelMember = await prisma.channelMember.findFirst({
+      where: {
+        userId: user.id,
+        channelId: channel.id,
+        isActive: true
+      }
+    });
+
+    if (!requestingChannelMember) {
+      return res.status(403).json({ message: "You are not a member of this channel" });
+    }
+
+    // Check if the target user is a member of the workspace
+    const targetMember = await prisma.member.findFirst({
+      where: {
+        userId: payload.userId,
+        workspaceId: channel.workspaceId,
+        isActive: true
+      }
+    });
+
+    if (!targetMember) {
+      return res.status(400).json({ message: "User is not a member of this workspace" });
+    }
+
+    // Check if the target user is already a member of the channel
+    const existingChannelMember = await prisma.channelMember.findFirst({
+      where: {
+        userId: payload.userId,
+        channelId: channel.id,
+        isActive: true
+      }
+    });
+
+    if (existingChannelMember) {
+      return res.status(400).json({ message: "User is already a member of this channel" });
+    }
+
+    // Add the user to the channel
+    const newChannelMember = await prisma.channelMember.create({
+      data: {
+        userId: payload.userId,
+        channelId: channel.id
+      }
+    });
+
+    return res.status(200).json({
+      message: "Member added to channel successfully",
+      data: newChannelMember
     });
   } catch (error) {
     if (error instanceof ZodError) {
