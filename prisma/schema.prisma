@@ -28,6 +28,9 @@ model User {
   workspaces    Workspace[]
   members       Member[]
   channelMembers ChannelMember[]
+  messages      Message[]
+  reactions     Reaction[]
+  forwardedMessages ForwardedMessage[]
 }
 
 model Workspace {
@@ -60,6 +63,7 @@ model Channel {
   workspace   Workspace   @relation(fields: [workspaceId], references: [id])
   messages    Message[]
   members     ChannelMember[]
+  forwardedMessages ForwardedMessage[]
 }
 
 model Message {
@@ -69,6 +73,57 @@ model Message {
   updatedAt   DateTime  @updatedAt @default(now())
   channelId   String
   channel     Channel   @relation(fields: [channelId], references: [id])
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  
+  // Reply functionality
+  replyToId   String?
+  replyTo     Message?  @relation("MessageReplies", fields: [replyToId], references: [id])
+  replies     Message[] @relation("MessageReplies")
+  
+  // Forward functionality
+  forwardedMessages ForwardedMessage[]
+  
+  // Attachments
+  attachments Attachment[]
+  
+  // Reactions
+  reactions   Reaction[]
+}
+
+model Attachment {
+  id          String    @id @default(cuid())
+  filename    String
+  originalName String
+  mimeType    String
+  size        Int
+  url         String
+  createdAt   DateTime  @default(now())
+  messageId   String
+  message     Message   @relation(fields: [messageId], references: [id], onDelete: Cascade)
+}
+
+model Reaction {
+  id          String    @id @default(cuid())
+  emoji       String
+  createdAt   DateTime  @default(now())
+  messageId   String
+  message     Message   @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+
+  @@unique([messageId, userId, emoji])
+}
+
+model ForwardedMessage {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  originalMessageId String
+  originalMessage Message @relation(fields: [originalMessageId], references: [id])
+  forwardedByUserId String
+  forwardedBy User     @relation(fields: [forwardedByUserId], references: [id])
+  channelId   String
+  channel     Channel  @relation(fields: [channelId], references: [id])
 }
 
 enum Role {
