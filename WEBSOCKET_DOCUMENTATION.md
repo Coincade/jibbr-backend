@@ -1,71 +1,16 @@
-# Jibbr WebSocket Documentation
+# WebSocket Documentation
 
 ## Overview
 
-The Jibbr backend uses **Socket.IO** for real-time messaging functionality, providing a robust and scalable solution for instant communication. This implementation focuses exclusively on **messaging-related features** while keeping other operations (channel management, user management) as REST APIs.
+The WebSocket service provides real-time communication for both channel messages and direct messages. It uses Socket.IO for reliable, bidirectional communication with automatic reconnection and fallback support.
 
-## Architecture
+## Connection
 
-### Hybrid Approach
-- **Socket.IO**: Real-time messaging, reactions, edits, and message management
-- **REST APIs**: Message history, file uploads, channel management, user operations
+### Authentication
+All WebSocket connections require JWT authentication. The token can be provided in two ways:
 
-### Key Benefits of Socket.IO
-- **Automatic Reconnection**: Handles network interruptions gracefully
-- **Fallback Support**: Falls back to HTTP long-polling if WebSockets fail
-- **Room Management**: Built-in room system for channel management
-- **Better Error Handling**: More robust error handling and recovery
-- **Cross-Platform**: Better support across different browsers and environments
-- **Event-Based**: Cleaner event-based API compared to message parsing
-
-## Server Setup
-
-### Dependencies
-```json
-{
-  "socket.io": "^4.7.0",
-  "@types/socket.io": "^3.0.2"
-}
-```
-
-### Server Configuration
-```typescript
-import { Server } from 'socket.io';
-import { createServer } from 'http';
-
-const server = createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: process.env.FRONTEND_URL || "http://localhost:3000",
-    methods: ["GET", "POST"]
-  }
-});
-```
-
-## Authentication
-
-### JWT Token Validation
-Socket.IO connections require valid JWT tokens for authentication:
-
-```typescript
-// Middleware for token validation
-io.use((socket, next) => {
-  const token = socket.handshake.auth.token || socket.handshake.query.token;
-  
-  if (!token) {
-    return next(new Error('Authentication token required'));
-  }
-
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    socket.userId = decoded.userId;
-    socket.user = decoded;
-    next();
-  } catch (error) {
-    next(new Error('Invalid token'));
-  }
-});
-```
+1. **Auth object (recommended)**
+2. **Query parameter**
 
 ### Client Connection
 ```javascript
@@ -84,21 +29,23 @@ const socket = io('http://localhost:8000?token=' + jwtToken);
 
 ### Client → Server Events
 
-#### 1. Join Channel
+#### Channel Events
+
+##### 1. Join Channel
 ```javascript
 socket.emit('join_channel', {
   channelId: 'channel_123'
 });
 ```
 
-#### 2. Leave Channel
+##### 2. Leave Channel
 ```javascript
 socket.emit('leave_channel', {
   channelId: 'channel_123'
 });
 ```
 
-#### 3. Send Message
+##### 3. Send Message
 ```javascript
 socket.emit('send_message', {
   content: "Hello, world!",
@@ -108,7 +55,7 @@ socket.emit('send_message', {
 });
 ```
 
-#### 4. Edit Message
+##### 4. Edit Message
 ```javascript
 socket.emit('edit_message', {
   messageId: "message_123",
@@ -117,7 +64,7 @@ socket.emit('edit_message', {
 });
 ```
 
-#### 5. Delete Message
+##### 5. Delete Message
 ```javascript
 socket.emit('delete_message', {
   messageId: "message_123",
@@ -125,7 +72,7 @@ socket.emit('delete_message', {
 });
 ```
 
-#### 6. Forward Message
+##### 6. Forward Message
 ```javascript
 socket.emit('forward_message', {
   messageId: "message_123",
@@ -134,7 +81,7 @@ socket.emit('forward_message', {
 });
 ```
 
-#### 7. Add Reaction
+##### 7. Add Reaction
 ```javascript
 socket.emit('add_reaction', {
   messageId: "message_123",
@@ -143,7 +90,7 @@ socket.emit('add_reaction', {
 });
 ```
 
-#### 8. Remove Reaction
+##### 8. Remove Reaction
 ```javascript
 socket.emit('remove_reaction', {
   messageId: "message_123",
@@ -152,113 +99,211 @@ socket.emit('remove_reaction', {
 });
 ```
 
-#### 9. Ping (Health Check)
+#### Direct Message Events
+
+##### 1. Join Conversation
+```javascript
+socket.emit('join_conversation', {
+  conversationId: 'conversation_123'
+});
+```
+
+##### 2. Leave Conversation
+```javascript
+socket.emit('leave_conversation', {
+  conversationId: 'conversation_123'
+});
+```
+
+##### 3. Send Direct Message
+```javascript
+socket.emit('send_direct_message', {
+  content: "Hello, how are you?",
+  conversationId: "conversation_123",
+  replyToId: "message_456", // Optional
+  attachments: [] // Optional: File references from upload API
+});
+```
+
+##### 4. Edit Direct Message
+```javascript
+socket.emit('edit_direct_message', {
+  messageId: "message_123",
+  content: "Updated content",
+  conversationId: "conversation_123"
+});
+```
+
+##### 5. Delete Direct Message
+```javascript
+socket.emit('delete_direct_message', {
+  messageId: "message_123",
+  conversationId: "conversation_123"
+});
+```
+
+##### 6. Add Direct Reaction
+```javascript
+socket.emit('add_direct_reaction', {
+  messageId: "message_123",
+  emoji: "👍",
+  conversationId: "conversation_123"
+});
+```
+
+##### 7. Remove Direct Reaction
+```javascript
+socket.emit('remove_direct_reaction', {
+  messageId: "message_123",
+  emoji: "👍",
+  conversationId: "conversation_123"
+});
+```
+
+#### Utility Events
+
+##### 9. Ping (Health Check)
 ```javascript
 socket.emit('ping');
 ```
 
 ### Server → Client Events
 
-#### 1. New Message
+#### Channel Events
+
+##### 1. New Message
 ```javascript
 socket.on('new_message', (message) => {
   console.log('New message received:', message);
 });
 ```
 
-#### 2. Message Edited
+##### 2. Message Edited
 ```javascript
 socket.on('message_edited', (data) => {
   console.log('Message edited:', data);
 });
 ```
 
-#### 3. Message Deleted
+##### 3. Message Deleted
 ```javascript
 socket.on('message_deleted', (data) => {
   console.log('Message deleted:', data);
 });
 ```
 
-#### 4. Message Forwarded
+##### 4. Message Forwarded
 ```javascript
 socket.on('message_forwarded', (data) => {
   console.log('Message forwarded:', data);
 });
 ```
 
-#### 5. Reaction Added
+##### 5. Reaction Added
 ```javascript
 socket.on('reaction_added', (reaction) => {
   console.log('Reaction added:', reaction);
 });
 ```
 
-#### 6. Reaction Removed
+##### 6. Reaction Removed
 ```javascript
 socket.on('reaction_removed', (data) => {
   console.log('Reaction removed:', data);
 });
 ```
 
-#### 7. Pong (Health Check Response)
+#### Direct Message Events
+
+##### 1. New Direct Message
+```javascript
+socket.on('new_direct_message', (message) => {
+  console.log('New direct message received:', message);
+});
+```
+
+##### 2. Direct Message Edited
+```javascript
+socket.on('direct_message_edited', (data) => {
+  console.log('Direct message edited:', data);
+});
+```
+
+##### 3. Direct Message Deleted
+```javascript
+socket.on('direct_message_deleted', (data) => {
+  console.log('Direct message deleted:', data);
+});
+```
+
+##### 4. Direct Reaction Added
+```javascript
+socket.on('direct_reaction_added', (reaction) => {
+  console.log('Direct reaction added:', reaction);
+});
+```
+
+##### 5. Direct Reaction Removed
+```javascript
+socket.on('direct_reaction_removed', (data) => {
+  console.log('Direct reaction removed:', data);
+});
+```
+
+#### Connection Events
+
+##### 1. Authenticated
+```javascript
+socket.on('authenticated', (data) => {
+  console.log('Authentication successful:', data);
+});
+```
+
+##### 2. Joined Channel
+```javascript
+socket.on('joined_channel', (data) => {
+  console.log('Joined channel:', data);
+});
+```
+
+##### 3. Left Channel
+```javascript
+socket.on('left_channel', (data) => {
+  console.log('Left channel:', data);
+});
+```
+
+##### 4. Joined Conversation
+```javascript
+socket.on('conversation_joined', (data) => {
+  console.log('Joined conversation:', data);
+});
+```
+
+##### 5. Left Conversation
+```javascript
+socket.on('conversation_left', (data) => {
+  console.log('Left conversation:', data);
+});
+```
+
+##### 6. Pong (Health Check Response)
 ```javascript
 socket.on('pong', (data) => {
   console.log('Pong received:', data);
 });
 ```
 
-#### 8. Error
+##### 7. Error
 ```javascript
 socket.on('error', (data) => {
-  console.error('Error received:', data);
+  console.error('Socket error:', data);
 });
 ```
 
-## File Upload Workflow
+## Data Types
 
-### Improved UX Approach
-
-The new file upload system provides a better user experience by separating file upload from message sending:
-
-#### Step 1: Upload Files via REST API
-```javascript
-// Upload files first
-const uploadFiles = async (files) => {
-  const formData = new FormData();
-  files.forEach(file => formData.append('files', file));
-  
-  const response = await fetch('/api/upload/files', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}` },
-    body: formData
-  });
-  
-  return response.json();
-};
-```
-
-#### Step 2: Send Message with File References via Socket.IO
-```javascript
-// Send message with file references
-socket.emit('send_message', {
-  content: "Check out these files!",
-  channelId: "channel_123",
-  attachments: uploadedFiles // File references from step 1
-});
-```
-
-### Benefits of This Approach
-
-1. **Better UX**: Users can see upload progress and preview files
-2. **Error Handling**: Upload failures don't affect message sending
-3. **Flexibility**: Upload multiple files, send when ready
-4. **Real-time**: Files shared instantly via Socket.IO
-5. **Scalability**: Better handling of large files
-
-## Data Models
-
-### Message Object
+### Message Object (Channel)
 ```typescript
 interface Message {
   id: string;
@@ -274,6 +319,27 @@ interface Message {
     image: string | null;
   };
   replyTo: Message | null;
+  attachments: Attachment[];
+  reactions: Reaction[];
+}
+```
+
+### Direct Message Object
+```typescript
+interface DirectMessage {
+  id: string;
+  content: string;
+  conversationId: string;
+  userId: string;
+  createdAt: string;
+  updatedAt: string;
+  replyToId: string | null;
+  user: {
+    id: string;
+    name: string;
+    image: string | null;
+  };
+  replyTo: DirectMessage | null;
   attachments: Attachment[];
   reactions: Reaction[];
 }
@@ -336,16 +402,55 @@ socket.on('leave_channel', (data) => {
 });
 ```
 
+### Conversation-Based Rooms
+Each conversation is represented as a Socket.IO room:
+
+```typescript
+// Join conversation room
+socket.on('join_conversation', async (data) => {
+  const { conversationId } = data;
+  
+  // Validate user is participant of conversation
+  const isParticipant = await validateConversationParticipation(socket.userId, conversationId);
+  if (!isParticipant) {
+    socket.emit('error', { message: 'Access denied to conversation' });
+    return;
+  }
+  
+  socket.join(conversationId);
+  socket.emit('conversation_joined', { conversationId });
+});
+
+// Leave conversation room
+socket.on('leave_conversation', (data) => {
+  const { conversationId } = data;
+  socket.leave(conversationId);
+  socket.emit('conversation_left', { conversationId });
+});
+```
+
 ### Broadcasting to Rooms
 ```typescript
 // Broadcast message to channel
 io.to(channelId).emit('new_message', message);
 
+// Broadcast message to conversation
+io.to(conversationId).emit('new_direct_message', message);
+
 // Broadcast reaction to channel
 io.to(channelId).emit('reaction_added', reaction);
 
+// Broadcast reaction to conversation
+io.to(conversationId).emit('direct_reaction_added', reaction);
+
 // Broadcast message edit to channel
 io.to(channelId).emit('message_edited', {
+  messageId: message.id,
+  content: message.content
+});
+
+// Broadcast message edit to conversation
+io.to(conversationId).emit('direct_message_edited', {
   messageId: message.id,
   content: message.content
 });
@@ -362,203 +467,153 @@ socket.on('connect_error', (error) => {
 
 socket.on('disconnect', (reason) => {
   console.log('Disconnected:', reason);
-  // Handle disconnection
+  // Handle disconnection logic
 });
 ```
 
-### Event Errors
+### Authentication Errors
 ```typescript
 socket.on('error', (data) => {
-  console.error('Socket error:', data.message);
-  // Show user-friendly error message
-});
-```
-
-### Server-Side Error Handling
-```typescript
-// Wrap event handlers in try-catch
-socket.on('send_message', async (data) => {
-  try {
-    // Process message
-    const message = await createMessage(data);
-    io.to(data.channelId).emit('new_message', message);
-  } catch (error) {
-    socket.emit('error', { 
-      message: 'Failed to send message',
-      details: error.message 
-    });
+  if (data.message === 'Authentication failed') {
+    // Redirect to login or refresh token
+    console.error('Authentication failed:', data);
   }
 });
 ```
-
-## Performance Optimization
-
-### Message Batching
-```typescript
-// Batch multiple messages for bulk operations
-const batchMessages = (messages: Message[]) => {
-  io.to(channelId).emit('batch_messages', messages);
-};
-```
-
-### Connection Limits
-```typescript
-// Limit connections per user
-const userConnections = new Map<string, number>();
-const MAX_CONNECTIONS_PER_USER = 3;
-
-socket.on('connect', () => {
-  const currentConnections = userConnections.get(socket.userId) || 0;
-  if (currentConnections >= MAX_CONNECTIONS_PER_USER) {
-    socket.disconnect();
-    return;
-  }
-  userConnections.set(socket.userId, currentConnections + 1);
-});
-```
-
-### Rate Limiting
-```typescript
-// Implement rate limiting for Socket.IO events
-const rateLimit = new Map<string, number[]>();
-
-const checkRateLimit = (userId: string, event: string) => {
-  const now = Date.now();
-  const userEvents = rateLimit.get(`${userId}:${event}`) || [];
-  const recentEvents = userEvents.filter(time => now - time < 60000); // 1 minute
-  
-  if (recentEvents.length >= 10) { // Max 10 events per minute
-    return false;
-  }
-  
-  recentEvents.push(now);
-  rateLimit.set(`${userId}:${event}`, recentEvents);
-  return true;
-};
-```
-
-## Testing
-
-### Unit Tests
-```typescript
-import { io as Client } from 'socket.io-client';
-
-describe('Socket.IO Tests', () => {
-  let client: any;
-  
-  beforeEach((done) => {
-    client = Client('http://localhost:8000', {
-      auth: { token: 'valid-jwt-token' }
-    });
-    client.on('connect', done);
-  });
-  
-  afterEach(() => {
-    client.close();
-  });
-  
-  test('should send and receive message', (done) => {
-    client.emit('send_message', {
-      content: 'Test message',
-      channelId: 'test-channel'
-    });
-    
-    client.on('new_message', (message) => {
-      expect(message.content).toBe('Test message');
-      done();
-    });
-  });
-});
-```
-
-### Integration Tests
-```typescript
-// Test with real database
-test('should create message in database', async () => {
-  const message = await createMessage({
-    content: 'Test message',
-    channelId: 'test-channel',
-    userId: 'test-user'
-  });
-  
-  expect(message).toBeDefined();
-  expect(message.content).toBe('Test message');
-});
-```
-
-## Monitoring and Debugging
-
-### Connection Statistics
-```typescript
-// Get connection stats
-app.get('/api/ws/stats', (req, res) => {
-  const stats = {
-    totalConnections: io.engine.clientsCount,
-    channelStats: getChannelStats(),
-    userStats: getUserStats()
-  };
-  res.json(stats);
-});
-```
-
-### Logging
-```typescript
-// Log all events for debugging
-io.on('connection', (socket) => {
-  console.log(`User ${socket.userId} connected`);
-  
-  socket.onAny((eventName, ...args) => {
-    console.log(`Event: ${eventName}`, args);
-  });
-  
-  socket.on('disconnect', () => {
-    console.log(`User ${socket.userId} disconnected`);
-  });
-});
-```
-
-## Migration from Raw WebSockets
-
-### Key Changes Made
-1. **Replaced `ws` package with `socket.io`**
-2. **Updated authentication middleware**
-3. **Changed from message parsing to event-based communication**
-4. **Replaced manual room management with Socket.IO rooms**
-5. **Updated all event handlers to use Socket.IO emit methods**
-
-### Benefits Achieved
-- **Automatic reconnection handling**
-- **Better cross-browser compatibility**
-- **Built-in room management**
-- **Improved error handling**
-- **Fallback to HTTP long-polling**
-- **Cleaner event-based API**
 
 ## Best Practices
 
 ### 1. Connection Management
-- Let Socket.IO handle reconnection automatically
-- Monitor connection status for user feedback
-- Handle connection errors gracefully
+```javascript
+// Reconnect on connection loss
+socket.on('disconnect', () => {
+  console.log('Disconnected, attempting to reconnect...');
+  setTimeout(() => {
+    socket.connect();
+  }, 1000);
+});
 
-### 2. Event Handling
-- Always validate data before processing
-- Handle unknown event types gracefully
-- Implement proper error responses
+// Handle reconnection
+socket.on('connect', () => {
+  console.log('Reconnected successfully');
+  // Re-join rooms if needed
+});
+```
 
-### 3. Security
-- Always validate JWT tokens
-- Implement rate limiting for events
-- Sanitize user input before broadcasting
+### 2. Room Management
+```javascript
+// Join rooms when connecting
+socket.on('authenticated', (data) => {
+  // Join user's active channels
+  activeChannels.forEach(channelId => {
+    socket.emit('join_channel', { channelId });
+  });
+  
+  // Join user's active conversations
+  activeConversations.forEach(conversationId => {
+    socket.emit('join_conversation', { conversationId });
+  });
+});
+```
 
-### 4. Performance
-- Limit message size and frequency
-- Use rooms for targeted broadcasting
-- Implement connection pooling for multiple channels
+### 3. Message Handling
+```javascript
+// Handle incoming messages
+socket.on('new_message', (message) => {
+  // Update UI with new message
+  addMessageToUI(message);
+});
 
-### 5. Testing
-- Mock Socket.IO for unit tests
-- Test both success and error scenarios
-- Test reconnection logic
+socket.on('new_direct_message', (message) => {
+  // Update UI with new direct message
+  addDirectMessageToUI(message);
+});
 
-This documentation provides a comprehensive guide for the Socket.IO implementation in the Jibbr messaging system, focusing on real-time messaging features while maintaining a clean separation of concerns with REST APIs for other operations. 
+// Handle message updates
+socket.on('message_edited', (data) => {
+  // Update message in UI
+  updateMessageInUI(data.messageId, data.content);
+});
+
+socket.on('direct_message_edited', (data) => {
+  // Update direct message in UI
+  updateDirectMessageInUI(data.messageId, data.content);
+});
+```
+
+### 4. Error Recovery
+```javascript
+// Retry failed operations
+socket.on('error', (data) => {
+  if (data.message.includes('Failed to send')) {
+    // Store message for retry
+    storeMessageForRetry(data);
+  }
+});
+
+// Implement retry mechanism
+function retryFailedMessage(messageData) {
+  setTimeout(() => {
+    socket.emit('send_message', messageData);
+  }, 2000);
+}
+```
+
+## API Integration
+
+### REST API for History
+```javascript
+// Load message history
+async function loadChannelMessages(channelId, page = 1) {
+  const response = await fetch(`/api/messages?channelId=${channelId}&page=${page}`);
+  const data = await response.json();
+  return data.data;
+}
+
+// Load direct message history
+async function loadConversationMessages(conversationId, page = 1) {
+  const response = await fetch(`/api/conversations/${conversationId}/messages?page=${page}`);
+  const data = await response.json();
+  return data.data;
+}
+```
+
+### File Upload Integration
+```javascript
+// Upload file first, then send message with file reference
+async function sendMessageWithFile(channelId, content, file) {
+  // 1. Upload file
+  const formData = new FormData();
+  formData.append('file', file);
+  
+  const uploadResponse = await fetch('/api/upload', {
+    method: 'POST',
+    body: formData
+  });
+  
+  const uploadData = await uploadResponse.json();
+  
+  // 2. Send message with file reference
+  socket.emit('send_message', {
+    content,
+    channelId,
+    attachments: [uploadData.data]
+  });
+}
+```
+
+## Security Considerations
+
+1. **Authentication**: All connections require valid JWT tokens
+2. **Authorization**: Users can only access channels they're members of and conversations they're participants in
+3. **Input Validation**: All message content is validated before processing
+4. **Rate Limiting**: Consider implementing rate limiting for message sending
+5. **File Upload**: Files are validated for type and size before upload
+
+## Performance Tips
+
+1. **Room Management**: Only join rooms when needed, leave when not active
+2. **Message Batching**: Consider batching multiple messages for better performance
+3. **Connection Pooling**: Reuse connections when possible
+4. **Error Handling**: Implement proper error handling to prevent connection drops
+5. **Monitoring**: Use the stats endpoint to monitor connection health 
