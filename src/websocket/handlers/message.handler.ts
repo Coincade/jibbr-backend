@@ -9,7 +9,8 @@ import { ZodError } from 'zod';
 export const handleSendMessage = async (
   socket: Socket,
   data: SendMessageMessage,
-  channelClients: ChannelClientsMap
+  channelClients: ChannelClientsMap,
+  io: any // <-- add io parameter
 ): Promise<void> => {
   try {
     if (!socket.data.user) {
@@ -132,8 +133,8 @@ export const handleSendMessage = async (
       });
 
       if (messageWithAttachments) {
-        // Broadcast to channel using Socket.IO
-        socket.to(data.channelId).emit('new_message', {
+        // Broadcast to channel using Socket.IO (to everyone, including sender)
+        io.to(data.channelId).emit('new_message', {
           ...messageWithAttachments,
           createdAt: messageWithAttachments.createdAt.toISOString(),
           updatedAt: messageWithAttachments.updatedAt.toISOString(),
@@ -149,9 +150,8 @@ export const handleSendMessage = async (
         return;
       }
     }
-
-    // Broadcast to channel using Socket.IO
-    socket.to(data.channelId).emit('new_message', {
+    // Broadcast to channel using Socket.IO (to everyone, including sender)
+    io.to(data.channelId).emit('new_message', {
       ...message,
       createdAt: message.createdAt.toISOString(),
       updatedAt: message.updatedAt.toISOString(),

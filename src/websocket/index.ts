@@ -12,7 +12,7 @@ export class WebSocketService {
   constructor(server: Server) {
     this.io = new SocketIOServer(server, {
       cors: {
-        origin: process.env.FRONTEND_URL || "http://localhost:3000",
+        origin: process.env.FRONTEND_URL || "http://localhost:5173",
         methods: ["GET", "POST"]
       },
       // Allow all namespaces
@@ -144,7 +144,7 @@ export class WebSocketService {
     try {
       // Automatically add client to channel when sending message
       addClientToChannel(socket, data.channelId, this.channelClients);
-      await handleSendMessage(socket, data, this.channelClients);
+      await handleSendMessage(socket, data, this.channelClients, this.io); // pass this.io
     } catch (error) {
       console.error('Error handling send message:', error);
       socket.emit('error', { message: 'Failed to send message' });

@@ -6,17 +6,24 @@ import { Socket, ChannelClientsMap, ServerMessage } from './types.js';
  */
 export const authenticateSocket = (token: string | null): { id: string; name?: string; image?: string } | null => {
   try {
-    if (!token || !process.env.JWT_SECRET) {
-      throw new Error('No token or JWT secret');
+    if (!token || !process.env.SECRET_KEY) {
+      console.log('Auth failed: No token or SECRET_KEY');
+      throw new Error('No token or SECRET_KEY');
     }
     
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    console.log('Attempting to verify token with SECRET_KEY:', process.env.SECRET_KEY ? 'Present' : 'Missing');
+    
+    const decoded = jwt.verify(token, process.env.SECRET_KEY);
+    console.log('Token decoded successfully:', decoded);
+    
     if (typeof decoded === 'object' && decoded !== null && 'id' in decoded) {
       return decoded as { id: string; name?: string; image?: string };
     } else {
+      console.log('Invalid token payload structure');
       throw new Error('Invalid token payload');
     }
   } catch (error) {
+    console.log('JWT verification failed:', error);
     return null;
   }
 };
