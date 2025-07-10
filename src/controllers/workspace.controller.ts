@@ -188,7 +188,8 @@ export const getWorkspaceMembers = async (req: Request, res: Response) => {
         user: {
           select: {
             name: true,
-            image: true
+            image: true,
+            email: true
           }
         }
       }
