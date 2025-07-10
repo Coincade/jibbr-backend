@@ -31,6 +31,8 @@ model User {
   messages      Message[]
   reactions     Reaction[]
   forwardedMessages ForwardedMessage[]
+  // Direct messaging
+  conversations ConversationParticipant[]
 }
 
 model Workspace {
@@ -66,13 +68,44 @@ model Channel {
   forwardedMessages ForwardedMessage[]
 }
 
+// Direct messaging support
+model Conversation {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt @default(now())
+  messages    Message[]
+  participants ConversationParticipant[]
+  
+  @@unique([id])
+}
+
+model ConversationParticipant {
+  id             String       @id @default(cuid())
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt @default(now())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isActive       Boolean      @default(true)
+
+  @@unique([conversationId, userId])
+}
+
 model Message {
   id          String    @id @default(cuid())
   content     String
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt @default(now())
-  channelId   String
-  channel     Channel   @relation(fields: [channelId], references: [id])
+  
+  // Support both channel and direct messages
+  channelId   String?
+  channel     Channel?  @relation(fields: [channelId], references: [id])
+  
+  // Direct message support
+  conversationId String?
+  conversation   Conversation? @relation(fields: [conversationId], references: [id])
+  
   userId      String
   user        User      @relation(fields: [userId], references: [id])
   
@@ -89,6 +122,11 @@ model Message {
   
   // Reactions
   reactions   Reaction[]
+  
+  // Soft delete support
+  deletedAt   DateTime?
+  
+
 }
 
 model Attachment {

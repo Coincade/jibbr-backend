@@ -10,8 +10,9 @@
 7. [Socket.IO Events](#socketio-events)
 8. [File Upload Workflow](#file-upload-workflow)
 9. [Data Models](#data-models)
-10. [React Integration Examples](#react-integration-examples)
-11. [Best Practices](#best-practices)
+10. [Soft Delete Functionality](#soft-delete-functionality)
+11. [React Integration Examples](#react-integration-examples)
+12. [Best Practices](#best-practices)
 
 ## Overview
 
@@ -19,9 +20,13 @@ The Jibbr Messaging API uses a **hybrid architecture** combining REST APIs and S
 
 - **REST APIs**: Message history, file uploads, and non-realtime operations
 - **Socket.IO**: Real-time messaging, reactions, edits, and message management
+- **Soft Delete**: Messages are preserved for audit/emergency purposes
 
 ### Key Features
 - **Real-time Messaging**: Instant message delivery via Socket.IO
+- **Direct Messaging**: Private conversations between users
+- **Channel Messaging**: Group conversations in channels
+- **Soft Delete**: Messages are hidden but preserved in database
 - **Improved File Upload**: Two-step process for better UX (Upload → Send)
 - **File Attachments**: Upload images, documents, and other files (up to 10MB each, max 5 files)
 - **Live Reactions**: Real-time emoji reactions to messages
@@ -58,46 +63,23 @@ const socket = io('http://localhost:8000', {
 const socket = io('http://localhost:8000?token=' + jwtToken);
 ```
 
-### Token Format
-```
-REST API: Authorization: Bearer <your-jwt-token>
-Socket.IO: auth.token or query parameter
-```
-
 ## Base URL
 
 ```
-REST API:
-Development: http://localhost:8000/api
-Production: https://your-domain.com/api
-
-Socket.IO:
-Development: http://localhost:8000
-Production: https://your-domain.com
+Production: https://your-api-domain.com
+Development: http://localhost:7000
 ```
 
 ## Error Handling
 
-### REST API Error Responses
-```javascript
-// Success Response
-{
-  "message": "Operation successful",
-  "data": { /* response data */ }
-}
-
-// Error Response
+### Standard Error Response Format
+```json
 {
   "message": "Error description",
-  "errors": { /* validation errors */ }
+  "errors": {
+    "field": ["validation error"]
+  }
 }
-```
-
-### Socket.IO Error Events
-```javascript
-socket.on('error', (data) => {
-  console.error('Socket error:', data.message);
-});
 ```
 
 ### Common HTTP Status Codes
@@ -112,212 +94,306 @@ socket.on('error', (data) => {
 
 ## Hybrid Architecture
 
-### When to Use REST APIs
-- **Message History**: Loading past messages with pagination
-- **File Uploads**: Uploading files before sending messages
-- **Channel Management**: Creating, updating, deleting channels
-- **User Management**: Authentication, user profiles
+### REST APIs for:
+- Message history retrieval
+- File uploads
+- User management
+- Channel management
+- Conversation management
+- Message deletion (soft delete)
 
-### When to Use Socket.IO
-- **Real-time Messaging**: Sending and receiving messages instantly
-- **Message Reactions**: Adding/removing emoji reactions
-- **Message Edits**: Updating message content
-- **Message Deletion**: Removing messages
-- **Message Forwarding**: Forwarding to other channels
-- **File Sharing**: Sending messages with file references
+### Socket.IO for:
+- Real-time message sending
+- Live reactions
+- Message editing
+- Message deletion notifications
+- Typing indicators
+- Online status
 
 ## REST API Endpoints
 
-### 1. Get Message History
+### Authentication
 
-**GET** `/api/messages/channel/:channelId`
+#### Register User
+```http
+POST /api/auth/register
+Content-Type: application/json
 
-Retrieve messages from a channel with pagination.
-
-#### Query Parameters
-- `page` (optional): Page number (default: 1)
-- `limit` (optional): Messages per page (default: 20, max: 100)
-
-#### Example
-```javascript
-const getMessages = async (channelId, page = 1, limit = 20) => {
-  const response = await fetch(
-    `/api/messages/channel/${channelId}?page=${page}&limit=${limit}`,
-    {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    }
-  );
-  return response.json();
-};
-```
-
-#### Response
-```javascript
 {
-  "message": "Messages retrieved successfully",
-  "data": {
-    "messages": [
-      {
-        "id": "msg_123",
-        "content": "Hello!",
-        "createdAt": "2024-01-01T00:00:00.000Z",
-        "user": {
-          "id": "user_123",
-          "name": "John Doe",
-          "image": "https://example.com/avatar.jpg"
-        },
-        "attachments": [
-          {
-            "id": "att_123",
-            "filename": "document.pdf",
-            "originalName": "document.pdf",
-            "mimeType": "application/pdf",
-            "size": 1024000,
-            "url": "https://spaces.example.com/attachments/document.pdf"
-          }
-        ],
-        "reactions": [
-          {
-            "id": "react_123",
-            "emoji": "👍",
-            "user": {
-              "id": "user_456",
-              "name": "Jane Smith"
-            }
-          }
-        ],
-        "replyTo": null
-      }
-    ],
-    "pagination": {
-      "page": 1,
-      "limit": 20,
-      "total": 150,
-      "pages": 8
-    }
-  }
+  "name": "John Doe",
+  "email": "john@example.com",
+  "password": "securepassword"
 }
 ```
 
-### 2. Get Single Message
+#### Login User
+```http
+POST /api/auth/login
+Content-Type: application/json
 
-**GET** `/api/messages/:messageId`
-
-Retrieve a specific message by ID.
-
-#### Response
-```javascript
 {
-  "message": "Message retrieved successfully",
-  "data": {
-    "id": "msg_123",
-    "content": "Hello!",
-    "createdAt": "2024-01-01T00:00:00.000Z",
-    "user": {
-      "id": "user_123",
-      "name": "John Doe",
-      "image": "https://example.com/avatar.jpg"
-    },
-    "attachments": [],
-    "reactions": [],
-    "replyTo": null
-  }
+  "email": "john@example.com",
+  "password": "securepassword"
 }
 ```
 
-### 3. Upload Files
+### Channel Messages
 
-**POST** `/api/upload/files`
+#### Send Message
+```http
+POST /api/messages/send
+Authorization: Bearer <token>
+Content-Type: application/json
 
-Upload files and get file references for use in messages.
-
-#### Request
-```javascript
-const formData = new FormData();
-formData.append('files', file1);
-formData.append('files', file2);
-
-const response = await fetch('/api/upload/files', {
-  method: 'POST',
-  headers: {
-    'Authorization': `Bearer ${token}`
-  },
-  body: formData
-});
-```
-
-#### Response
-```javascript
 {
-  "message": "Files uploaded successfully",
-  "data": {
-    "files": [
-      {
-        "id": "att_123",
-        "filename": "document.pdf",
-        "originalName": "document.pdf",
-        "mimeType": "application/pdf",
-        "size": 1024000,
-        "url": "https://spaces.example.com/attachments/document.pdf",
-        "createdAt": "2024-01-01T00:00:00.000Z"
-      }
-    ]
-  }
+  "content": "Hello, world!",
+  "channelId": "channel_123",
+  "replyToId": "message_456" // Optional
 }
 ```
 
-### 4. Socket.IO Stats
+#### Send Message with Attachments
+```http
+POST /api/messages/send-with-attachments
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
 
-**GET** `/api/ws/stats`
-
-Get current Socket.IO connection statistics.
-
-#### Response
-```javascript
 {
-  "totalConnections": 5,
-  "channelStats": {
-    "channel_123": 3,
-    "channel_456": 2
-  }
+  "content": "Check out these files!",
+  "channelId": "channel_123",
+  "replyToId": "message_456", // Optional
+  "attachments": [file1, file2, ...] // Max 5 files, 10MB each
 }
+```
+
+#### Get Channel Messages
+```http
+GET /api/messages?channelId=channel_123&page=1&limit=50
+Authorization: Bearer <token>
+```
+
+#### Get Specific Message
+```http
+GET /api/messages/message_123
+Authorization: Bearer <token>
+```
+
+#### Edit Message
+```http
+PUT /api/messages/message_123
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "content": "Updated message content"
+}
+```
+
+#### Delete Message (Soft Delete)
+```http
+DELETE /api/messages/message_123
+Authorization: Bearer <token>
+```
+
+**Note**: Messages are soft deleted (preserved in database but hidden from UI)
+
+#### React to Message
+```http
+POST /api/messages/message_123/react
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "emoji": "👍"
+}
+```
+
+#### Remove Reaction
+```http
+DELETE /api/messages/message_123/reactions
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "emoji": "👍"
+}
+```
+
+#### Forward Message
+```http
+POST /api/messages/message_123/forward
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "channelId": "target_channel_456"
+}
+```
+
+### Direct Messages (Conversations)
+
+#### Get or Create Conversation
+```http
+GET /api/conversations/with/user_123
+Authorization: Bearer <token>
+```
+
+#### Get User's Conversations
+```http
+GET /api/conversations
+Authorization: Bearer <token>
+```
+
+#### Get Conversation Messages
+```http
+GET /api/conversations/conversation_123/messages?page=1&limit=50
+Authorization: Bearer <token>
+```
+
+#### Send Direct Message
+```http
+POST /api/conversations/conversation_123/messages
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "content": "Hello! How are you?",
+  "replyToId": "message_456" // Optional
+}
+```
+
+#### Send Direct Message with Attachments
+```http
+POST /api/conversations/conversation_123/messages/with-attachments
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+
+{
+  "content": "Check out these files!",
+  "replyToId": "message_456", // Optional
+  "attachments": [file1, file2, ...] // Max 5 files, 10MB each
+}
+```
+
+#### Delete Direct Message (Soft Delete)
+```http
+DELETE /api/conversations/conversation_123/messages/message_456
+Authorization: Bearer <token>
+```
+
+### File Upload
+
+#### Upload Files
+```http
+POST /api/upload/files
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+
+{
+  "files": [file1, file2, ...] // Max 5 files, 10MB each
+}
+```
+
+### Workspace Management
+
+#### Create Workspace
+```http
+POST /api/workspace
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "name": "My Workspace",
+  "image": "workspace_image_url" // Optional
+}
+```
+
+#### Get User's Workspaces
+```http
+GET /api/workspace
+Authorization: Bearer <token>
+```
+
+#### Join Workspace
+```http
+POST /api/workspace/join
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "joinCode": "ABC123"
+}
+```
+
+### Channel Management
+
+#### Create Channel
+```http
+POST /api/channel
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "name": "General",
+  "type": "PUBLIC", // PUBLIC, PRIVATE, ANNOUNCEMENT
+  "workspaceId": "workspace_123"
+}
+```
+
+#### Get Workspace Channels
+```http
+GET /api/channel?workspaceId=workspace_123
+Authorization: Bearer <token>
 ```
 
 ## Socket.IO Events
 
 ### Client → Server Events
 
-#### Send Message
+#### Channel Events
 ```javascript
+// Join channel
+socket.emit('join_channel', { channelId: 'channel_123' });
+
+// Leave channel
+socket.emit('leave_channel', { channelId: 'channel_123' });
+
+// Send message
 socket.emit('send_message', {
   content: "Hello, world!",
   channelId: "channel_123",
   replyToId: "message_456", // Optional
   attachments: [] // Optional: File references from upload API
 });
-```
 
-#### Edit Message
-```javascript
+// Edit message
 socket.emit('edit_message', {
   messageId: "message_123",
   content: "Updated content",
   channelId: "channel_123"
 });
-```
 
-#### Delete Message
-```javascript
+// Delete message (Soft Delete)
 socket.emit('delete_message', {
   messageId: "message_123",
   channelId: "channel_123"
 });
-```
 
-#### Forward Message
-```javascript
+// Add reaction
+socket.emit('add_reaction', {
+  messageId: "message_123",
+  emoji: "👍",
+  channelId: "channel_123"
+});
+
+// Remove reaction
+socket.emit('remove_reaction', {
+  messageId: "message_123",
+  emoji: "👍",
+  channelId: "channel_123"
+});
+
+// Forward message
 socket.emit('forward_message', {
   messageId: "message_123",
   channelId: "source_channel_123",
@@ -325,146 +401,163 @@ socket.emit('forward_message', {
 });
 ```
 
-#### Add Reaction
+#### Direct Message Events
 ```javascript
-socket.emit('add_reaction', {
+// Join conversation
+socket.emit('join_conversation', { conversationId: 'conversation_123' });
+
+// Leave conversation
+socket.emit('leave_conversation', { conversationId: 'conversation_123' });
+
+// Send direct message
+socket.emit('send_direct_message', {
+  content: "Hello! How are you?",
+  conversationId: "conversation_123",
+  replyToId: "message_456", // Optional
+  attachments: [] // Optional: File references from upload API
+});
+
+// Edit direct message
+socket.emit('edit_direct_message', {
+  messageId: "message_123",
+  content: "Updated content",
+  conversationId: "conversation_123"
+});
+
+// Delete direct message (Soft Delete)
+socket.emit('delete_direct_message', {
+  messageId: "message_123",
+  conversationId: "conversation_123"
+});
+
+// Add direct reaction
+socket.emit('add_direct_reaction', {
   messageId: "message_123",
   emoji: "👍",
-  channelId: "channel_123"
+  conversationId: "conversation_123"
+});
+
+// Remove direct reaction
+socket.emit('remove_direct_reaction', {
+  messageId: "message_123",
+  emoji: "👍",
+  conversationId: "conversation_123"
 });
 ```
 
-#### Remove Reaction
+#### Utility Events
 ```javascript
-socket.emit('remove_reaction', {
-  messageId: "message_123",
-  emoji: "👍",
-  channelId: "channel_123"
-});
-```
-
-#### Ping (Health Check)
-```javascript
+// Health check
 socket.emit('ping');
 ```
 
 ### Server → Client Events
 
-#### New Message
+#### Channel Events
 ```javascript
+// New message
 socket.on('new_message', (message) => {
-  console.log('New message received:', message);
-  // message structure:
-  // {
-  //   id: "message_123",
-  //   content: "Hello, world!",
-  //   channelId: "channel_123",
-  //   userId: "user_123",
-  //   createdAt: "2024-01-01T00:00:00.000Z",
-  //   updatedAt: "2024-01-01T00:00:00.000Z",
-  //   replyToId: null,
-  //   user: { id: "user_123", name: "John Doe", image: "avatar.jpg" },
-  //   attachments: [],
-  //   reactions: []
-  // }
+  console.log('New message:', message);
 });
-```
 
-#### Message Edited
-```javascript
+// Message edited
 socket.on('message_edited', (data) => {
   console.log('Message edited:', data);
-  // data structure:
-  // {
-  //   messageId: "message_123",
-  //   content: "Updated content"
-  // }
 });
-```
 
-#### Message Deleted
-```javascript
+// Message deleted (Soft Delete)
 socket.on('message_deleted', (data) => {
   console.log('Message deleted:', data);
-  // data structure:
-  // {
-  //   messageId: "message_123"
-  // }
 });
-```
 
-#### Message Forwarded
-```javascript
-socket.on('message_forwarded', (data) => {
-  console.log('Message forwarded:', data);
-  // data structure:
-  // {
-  //   originalMessage: { /* message object */ },
-  //   targetChannelId: "target_channel_456"
-  // }
-});
-```
-
-#### Reaction Added
-```javascript
+// Reaction added
 socket.on('reaction_added', (reaction) => {
   console.log('Reaction added:', reaction);
-  // reaction structure:
-  // {
-  //   id: "reaction_123",
-  //   emoji: "👍",
-  //   messageId: "message_123",
-  //   userId: "user_123",
-  //   createdAt: "2024-01-01T00:00:00.000Z",
-  //   user: { id: "user_123", name: "John Doe" }
-  // }
 });
-```
 
-#### Reaction Removed
-```javascript
+// Reaction removed
 socket.on('reaction_removed', (data) => {
   console.log('Reaction removed:', data);
-  // data structure:
-  // {
-  //   messageId: "message_123",
-  //   emoji: "👍",
-  //   userId: "user_123"
-  // }
+});
+
+// Message forwarded
+socket.on('message_forwarded', (data) => {
+  console.log('Message forwarded:', data);
 });
 ```
 
-#### Pong (Health Check Response)
+#### Direct Message Events
 ```javascript
+// New direct message
+socket.on('new_direct_message', (message) => {
+  console.log('New direct message:', message);
+});
+
+// Direct message edited
+socket.on('direct_message_edited', (data) => {
+  console.log('Direct message edited:', data);
+});
+
+// Direct message deleted (Soft Delete)
+socket.on('direct_message_deleted', (data) => {
+  console.log('Direct message deleted:', data);
+});
+
+// Direct reaction added
+socket.on('direct_reaction_added', (reaction) => {
+  console.log('Direct reaction added:', reaction);
+});
+
+// Direct reaction removed
+socket.on('direct_reaction_removed', (data) => {
+  console.log('Direct reaction removed:', data);
+});
+```
+
+#### Connection Events
+```javascript
+// Authentication successful
+socket.on('authenticated', (data) => {
+  console.log('Authenticated:', data);
+});
+
+// Joined channel
+socket.on('joined_channel', (data) => {
+  console.log('Joined channel:', data);
+});
+
+// Left channel
+socket.on('left_channel', (data) => {
+  console.log('Left channel:', data);
+});
+
+// Joined conversation
+socket.on('conversation_joined', (data) => {
+  console.log('Joined conversation:', data);
+});
+
+// Left conversation
+socket.on('conversation_left', (data) => {
+  console.log('Left conversation:', data);
+});
+
+// Health check response
 socket.on('pong', (data) => {
   console.log('Pong received:', data);
-  // data structure:
-  // {
-  //   timestamp: 1704067200000
-  // }
 });
-```
 
-#### Error
-```javascript
+// Error
 socket.on('error', (data) => {
-  console.error('Error received:', data);
-  // data structure:
-  // {
-  //   message: "Error description"
-  // }
+  console.error('Socket error:', data);
 });
 ```
 
 ## File Upload Workflow
 
-### Improved UX Approach
+### Two-Step Process for Better UX
 
-The new file upload system provides a better user experience by separating file upload from message sending:
-
-#### Step 1: Upload Files
+#### Step 1: Upload Files via REST API
 ```javascript
-// Upload files first
 const uploadFiles = async (files) => {
   const formData = new FormData();
   files.forEach(file => formData.append('files', file));
@@ -479,18 +572,20 @@ const uploadFiles = async (files) => {
 };
 ```
 
-#### Step 2: Send Message with File References
+#### Step 2: Send Message with File References via Socket.IO
 ```javascript
+// Upload files first
+const uploadedFiles = await uploadFiles(fileList);
+
 // Send message with file references
 socket.emit('send_message', {
   content: "Check out these files!",
   channelId: "channel_123",
-  attachments: uploadedFiles // File references from step 1
+  attachments: uploadedFiles.data // File references from step 1
 });
 ```
 
 ### Benefits of This Approach
-
 1. **Better UX**: Users can see upload progress and preview files
 2. **Error Handling**: Upload failures don't affect message sending
 3. **Flexibility**: Upload multiple files, send when ready
@@ -499,118 +594,221 @@ socket.emit('send_message', {
 
 ## Data Models
 
-### Message Object
-```javascript
-{
-  id: string,
-  content: string,
-  channelId: string,
-  userId: string,
-  createdAt: string,
-  updatedAt: string,
-  replyToId: string | null,
+### Message Object (Channel)
+```typescript
+interface Message {
+  id: string;
+  content: string;
+  channelId: string;
+  userId: string;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null; // Soft delete timestamp
+  replyToId: string | null;
   user: {
-    id: string,
-    name: string,
-    image: string | null
-  },
-  replyTo: Message | null,
-  attachments: Attachment[],
-  reactions: Reaction[]
+    id: string;
+    name: string;
+    image: string | null;
+  };
+  replyTo: Message | null;
+  attachments: Attachment[];
+  reactions: Reaction[];
+}
+```
+
+### Direct Message Object
+```typescript
+interface DirectMessage {
+  id: string;
+  content: string;
+  conversationId: string;
+  userId: string;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null; // Soft delete timestamp
+  replyToId: string | null;
+  user: {
+    id: string;
+    name: string;
+    image: string | null;
+  };
+  replyTo: DirectMessage | null;
+  attachments: Attachment[];
+  reactions: Reaction[];
+}
+```
+
+### Conversation Object
+```typescript
+interface Conversation {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  participants: ConversationParticipant[];
+  lastMessage?: DirectMessage;
+  unreadCount?: number;
 }
 ```
 
 ### Attachment Object
-```javascript
-{
-  id: string,
-  filename: string,
-  originalName: string,
-  mimeType: string,
-  size: number,
-  url: string,
-  createdAt: string
+```typescript
+interface Attachment {
+  id: string;
+  filename: string;
+  originalName: string;
+  mimeType: string;
+  size: number;
+  url: string;
+  createdAt: string;
 }
 ```
 
 ### Reaction Object
-```javascript
-{
-  id: string,
-  emoji: string,
-  messageId: string,
-  userId: string,
-  createdAt: string,
+```typescript
+interface Reaction {
+  id: string;
+  emoji: string;
+  messageId: string;
+  userId: string;
+  createdAt: string;
   user: {
-    id: string,
-    name: string
+    id: string;
+    name: string;
+  };
+}
+```
+
+## Soft Delete Functionality
+
+### Overview
+Messages are **soft deleted** instead of being permanently removed from the database. This ensures data preservation for audit and emergency purposes while maintaining a clean user experience.
+
+### How Soft Delete Works
+
+#### When a message is "deleted":
+1. **Sets `deletedAt` timestamp** instead of removing the record
+2. **Optionally replaces content** with `[This message was deleted]`
+3. **Preserves all data** for audit/emergency purposes
+4. **Hides from message history** by filtering out `deletedAt: null`
+
+#### Benefits:
+- 🛡️ **Data Preservation**: Messages are never truly lost
+- 🔍 **Audit Trail**: Can investigate deleted messages if needed
+- 🚨 **Emergency Recovery**: Can restore messages if required
+- 📊 **Analytics**: Can analyze deletion patterns
+- ⚖️ **Compliance**: Meets data retention requirements
+
+### API Behavior
+
+#### Message History
+```javascript
+// GET /api/messages?channelId=channel_123
+// Automatically excludes soft-deleted messages
+{
+  "data": {
+    "messages": [
+      // Only active messages (deletedAt: null)
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 50,
+      "total": 100,
+      "pages": 2
+    }
   }
 }
 ```
 
+#### Reply Validation
+```javascript
+// Cannot reply to deleted messages
+socket.emit('send_message', {
+  content: "This will fail",
+  channelId: "channel_123",
+  replyToId: "deleted_message_456" // Error: Original message not found or has been deleted
+});
+```
+
+#### Delete Response
+```javascript
+// DELETE /api/messages/message_123
+{
+  "message": "Message deleted successfully"
+}
+
+// If already deleted
+{
+  "message": "Message is already deleted"
+}
+```
+
+### Database Schema
+```sql
+-- Messages table with soft delete support
+CREATE TABLE "Message" (
+  "id" TEXT NOT NULL,
+  "content" TEXT NOT NULL,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "deletedAt" TIMESTAMP(3), -- Soft delete timestamp
+  "channelId" TEXT,
+  "conversationId" TEXT,
+  "userId" TEXT NOT NULL,
+  "replyToId" TEXT,
+  -- ... other fields
+);
+```
+
 ## React Integration Examples
 
-### 1. Basic Chat Component
-
+### Basic Message Component
 ```jsx
 import React, { useState, useEffect } from 'react';
-import { io } from 'socket.io-client';
+import io from 'socket.io-client';
 
-const ChatComponent = ({ channelId, token }) => {
-  const [socket, setSocket] = useState(null);
+const MessageComponent = ({ channelId }) => {
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
+  const [socket, setSocket] = useState(null);
 
   useEffect(() => {
+    // Connect to WebSocket
     const newSocket = io('http://localhost:8000', {
-      auth: { token }
+      auth: { token: localStorage.getItem('token') }
     });
 
     newSocket.on('connect', () => {
-      console.log('Connected to chat');
+      console.log('Connected to WebSocket');
+      newSocket.emit('join_channel', { channelId });
     });
 
     newSocket.on('new_message', (message) => {
       setMessages(prev => [...prev, message]);
     });
 
-    newSocket.on('message_edited', (data) => {
-      setMessages(prev => prev.map(msg => 
-        msg.id === data.messageId 
-          ? { ...msg, content: data.content }
-          : msg
-      ));
-    });
-
     newSocket.on('message_deleted', (data) => {
       setMessages(prev => prev.filter(msg => msg.id !== data.messageId));
     });
 
-    newSocket.on('reaction_added', (reaction) => {
-      setMessages(prev => prev.map(msg => 
-        msg.id === reaction.messageId
-          ? { ...msg, reactions: [...msg.reactions, reaction] }
-          : msg
-      ));
-    });
-
-    newSocket.on('reaction_removed', (data) => {
-      setMessages(prev => prev.map(msg => 
-        msg.id === data.messageId
-          ? { 
-              ...msg, 
-              reactions: msg.reactions.filter(r => 
-                !(r.emoji === data.emoji && r.userId === data.userId)
-              )
-            }
-          : msg
-      ));
-    });
-
     setSocket(newSocket);
 
+    // Load message history
+    loadMessages();
+
     return () => newSocket.close();
-  }, [token]);
+  }, [channelId]);
+
+  const loadMessages = async () => {
+    try {
+      const response = await fetch(`/api/messages?channelId=${channelId}`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      const data = await response.json();
+      setMessages(data.data.messages);
+    } catch (error) {
+      console.error('Failed to load messages:', error);
+    }
+  };
 
   const sendMessage = () => {
     if (inputValue.trim() && socket) {
@@ -619,6 +817,15 @@ const ChatComponent = ({ channelId, token }) => {
         channelId
       });
       setInputValue('');
+    }
+  };
+
+  const deleteMessage = (messageId) => {
+    if (socket) {
+      socket.emit('delete_message', {
+        messageId,
+        channelId
+      });
     }
   };
 
@@ -664,6 +871,12 @@ const ChatComponent = ({ channelId, token }) => {
                 </span>
               ))}
             </div>
+            
+            <div className="message-actions">
+              <button onClick={() => addReaction(message.id, '👍')}>👍</button>
+              <button onClick={() => addReaction(message.id, '❤️')}>❤️</button>
+              <button onClick={() => deleteMessage(message.id)}>Delete</button>
+            </div>
           </div>
         ))}
       </div>
@@ -682,101 +895,79 @@ const ChatComponent = ({ channelId, token }) => {
   );
 };
 
-export default ChatComponent;
+export default MessageComponent;
 ```
 
-### 2. Advanced Chat with Improved File Upload UX
-
+### Direct Message Component
 ```jsx
 import React, { useState, useEffect } from 'react';
-import { io } from 'socket.io-client';
+import io from 'socket.io-client';
 
-const AdvancedChat = ({ channelId, token }) => {
-  const [socket, setSocket] = useState(null);
+const DirectMessageComponent = ({ conversationId }) => {
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
-  const [selectedFiles, setSelectedFiles] = useState([]);
-  const [uploadedFiles, setUploadedFiles] = useState([]);
-  const [isUploading, setIsUploading] = useState(false);
+  const [socket, setSocket] = useState(null);
 
   useEffect(() => {
+    // Connect to WebSocket
     const newSocket = io('http://localhost:8000', {
-      auth: { token }
+      auth: { token: localStorage.getItem('token') }
     });
 
-    // Socket.IO event handlers
     newSocket.on('connect', () => {
-      console.log('Connected to chat');
+      console.log('Connected to WebSocket');
+      newSocket.emit('join_conversation', { conversationId });
     });
 
-    newSocket.on('new_message', (message) => {
+    newSocket.on('new_direct_message', (message) => {
       setMessages(prev => [...prev, message]);
     });
 
-    // ... other event handlers
-
-    setSocket(newSocket);
-    return () => newSocket.close();
-  }, [token]);
-
-  const uploadFiles = async () => {
-    if (selectedFiles.length === 0) return;
-
-    setIsUploading(true);
-    const formData = new FormData();
-    
-    selectedFiles.forEach(file => {
-      formData.append('files', file);
+    newSocket.on('direct_message_deleted', (data) => {
+      setMessages(prev => prev.filter(msg => msg.id !== data.messageId));
     });
 
-    try {
-      const response = await fetch('/api/upload/files', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        body: formData
-      });
+    setSocket(newSocket);
 
-      if (response.ok) {
-        const result = await response.json();
-        setUploadedFiles(prev => [...prev, ...result.data.files]);
-        setSelectedFiles([]);
-      }
+    // Load message history
+    loadMessages();
+
+    return () => newSocket.close();
+  }, [conversationId]);
+
+  const loadMessages = async () => {
+    try {
+      const response = await fetch(`/api/conversations/${conversationId}/messages`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      const data = await response.json();
+      setMessages(data.data.messages);
     } catch (error) {
-      console.error('Failed to upload files:', error);
-    } finally {
-      setIsUploading(false);
+      console.error('Failed to load messages:', error);
     }
   };
 
   const sendMessage = () => {
-    if ((inputValue.trim() || uploadedFiles.length > 0) && socket) {
-      socket.emit('send_message', {
+    if (inputValue.trim() && socket) {
+      socket.emit('send_direct_message', {
         content: inputValue,
-        channelId,
-        attachments: uploadedFiles
+        conversationId
       });
       setInputValue('');
-      setUploadedFiles([]);
     }
   };
 
-  const handleFileSelect = (event) => {
-    const files = Array.from(event.target.files);
-    setSelectedFiles(prev => [...prev, ...files]);
-  };
-
-  const removeUploadedFile = (fileId) => {
-    setUploadedFiles(prev => prev.filter(file => file.id !== fileId));
-  };
-
-  const removeSelectedFile = (index) => {
-    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+  const deleteMessage = (messageId) => {
+    if (socket) {
+      socket.emit('delete_direct_message', {
+        messageId,
+        conversationId
+      });
+    }
   };
 
   return (
-    <div className="advanced-chat">
+    <div className="dm-container">
       <div className="messages">
         {messages.map(message => (
           <div key={message.id} className="message">
@@ -788,24 +979,8 @@ const AdvancedChat = ({ channelId, token }) => {
             </div>
             <div className="message-content">{message.content}</div>
             
-            {message.attachments.length > 0 && (
-              <div className="attachments">
-                {message.attachments.map(attachment => (
-                  <div key={attachment.id} className="attachment">
-                    <a href={attachment.url} target="_blank" rel="noopener noreferrer">
-                      {attachment.originalName}
-                    </a>
-                  </div>
-                ))}
-              </div>
-            )}
-            
-            <div className="reactions">
-              {message.reactions.map(reaction => (
-                <span key={reaction.id} className="reaction">
-                  {reaction.emoji}
-                </span>
-              ))}
+            <div className="message-actions">
+              <button onClick={() => deleteMessage(message.id)}>Delete</button>
             </div>
           </div>
         ))}
@@ -819,115 +994,262 @@ const AdvancedChat = ({ channelId, token }) => {
           onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
           placeholder="Type your message..."
         />
-        
-        <input
-          type="file"
-          multiple
-          onChange={handleFileSelect}
-          accept="image/*,.pdf,.doc,.docx,.txt"
-        />
-        
-        {/* Selected Files (not yet uploaded) */}
-        {selectedFiles.length > 0 && (
-          <div className="selected-files">
-            <h4>Files to upload:</h4>
-            {selectedFiles.map((file, index) => (
-              <div key={index} className="file-item">
-                <span>{file.name}</span>
-                <button onClick={() => removeSelectedFile(index)}>Remove</button>
-              </div>
-            ))}
-            <button 
-              onClick={uploadFiles} 
-              disabled={isUploading}
-            >
-              {isUploading ? 'Uploading...' : 'Upload Files'}
-            </button>
-          </div>
-        )}
-        
-        {/* Uploaded Files (ready to send) */}
-        {uploadedFiles.length > 0 && (
-          <div className="uploaded-files">
-            <h4>Files ready to send:</h4>
-            {uploadedFiles.map(file => (
-              <div key={file.id} className="file-item">
-                <span>{file.originalName}</span>
-                <button onClick={() => removeUploadedFile(file.id)}>Remove</button>
-              </div>
-            ))}
-          </div>
-        )}
-        
-        <button 
-          onClick={sendMessage} 
-          disabled={!inputValue.trim() && uploadedFiles.length === 0}
-        >
-          Send Message
-        </button>
+        <button onClick={sendMessage}>Send</button>
       </div>
     </div>
   );
 };
 
-export default AdvancedChat;
+export default DirectMessageComponent;
+```
+
+### File Upload Component
+```jsx
+import React, { useState } from 'react';
+
+const FileUploadComponent = ({ onFilesUploaded }) => {
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+
+  const uploadFiles = async (files) => {
+    setUploading(true);
+    setUploadProgress(0);
+
+    const formData = new FormData();
+    Array.from(files).forEach(file => {
+      formData.append('files', file);
+    });
+
+    try {
+      const response = await fetch('/api/upload/files', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+        body: formData
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        onFilesUploaded(data.data);
+      }
+    } catch (error) {
+      console.error('Upload failed:', error);
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
+    }
+  };
+
+  const handleFileSelect = (event) => {
+    const files = event.target.files;
+    if (files.length > 0) {
+      uploadFiles(files);
+    }
+  };
+
+  return (
+    <div className="file-upload">
+      <input
+        type="file"
+        multiple
+        accept="image/*,.pdf,.doc,.docx,.txt"
+        onChange={handleFileSelect}
+        disabled={uploading}
+      />
+      
+      {uploading && (
+        <div className="upload-progress">
+          <div className="progress-bar">
+            <div 
+              className="progress-fill" 
+              style={{ width: `${uploadProgress}%` }}
+            ></div>
+          </div>
+          <span>Uploading... {uploadProgress}%</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default FileUploadComponent;
 ```
 
 ## Best Practices
 
 ### 1. Connection Management
-- Socket.IO handles reconnection automatically
-- Monitor connection status for user feedback
-- Handle connection errors gracefully
+```javascript
+// Handle reconnection
+socket.on('disconnect', () => {
+  console.log('Disconnected, attempting to reconnect...');
+  setTimeout(() => {
+    socket.connect();
+  }, 1000);
+});
+
+// Monitor connection status
+socket.on('connect', () => {
+  console.log('Connected to server');
+});
+
+socket.on('connect_error', (error) => {
+  console.error('Connection error:', error);
+});
+```
 
 ### 2. Error Handling
-- Always listen for 'error' events
-- Implement fallback to REST APIs when Socket.IO fails
-- Log errors for debugging
+```javascript
+// Handle Socket.IO errors
+socket.on('error', (data) => {
+  if (data.message === 'Authentication failed') {
+    // Redirect to login
+    window.location.href = '/login';
+  } else {
+    // Show user-friendly error
+    showNotification(data.message, 'error');
+  }
+});
+
+// Handle API errors
+const handleApiError = (error) => {
+  if (error.status === 401) {
+    // Token expired, redirect to login
+    window.location.href = '/login';
+  } else if (error.status === 403) {
+    // Permission denied
+    showNotification('You do not have permission to perform this action', 'error');
+  } else {
+    // Generic error
+    showNotification('An error occurred. Please try again.', 'error');
+  }
+};
+```
 
 ### 3. Message Handling
-- Validate message structure before processing
-- Handle unknown event types gracefully
-- Implement optimistic UI updates
+```javascript
+// Optimistic updates for better UX
+const sendMessageOptimistic = (content) => {
+  const tempMessage = {
+    id: `temp_${Date.now()}`,
+    content,
+    user: currentUser,
+    createdAt: new Date().toISOString(),
+    pending: true
+  };
 
-### 4. File Upload
-- Upload files before sending messages
-- Show upload progress to users
-- Handle upload errors gracefully
-- Validate file types and sizes client-side
+  setMessages(prev => [tempMessage, ...prev]);
 
-### 5. Performance
-- Limit message size and frequency
-- Implement message batching for bulk operations
-- Use connection pooling for multiple channels
+  socket.emit('send_message', { content, channelId });
 
-### 6. Security
-- Always validate JWT tokens
-- Implement rate limiting for Socket.IO events
-- Sanitize user input before broadcasting
+  // Remove temp message when real message arrives
+  socket.on('new_message', (message) => {
+    setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id));
+  });
+};
+```
 
-### 7. Testing
-- Test both Socket.IO and REST API endpoints
-- Mock Socket.IO for unit tests
-- Test error scenarios and edge cases
+### 4. File Upload Best Practices
+```javascript
+// Validate file size and type
+const validateFile = (file) => {
+  const maxSize = 10 * 1024 * 1024; // 10MB
+  const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
 
-## Migration from Raw WebSockets
+  if (file.size > maxSize) {
+    throw new Error('File too large. Maximum size is 10MB.');
+  }
 
-This API was migrated from raw WebSockets (`ws` package) to Socket.IO for the following benefits:
+  if (!allowedTypes.includes(file.type)) {
+    throw new Error('File type not supported.');
+  }
 
-### Advantages of Socket.IO
-- **Automatic Reconnection**: Handles network interruptions gracefully
-- **Fallback Support**: Falls back to HTTP long-polling if WebSockets fail
-- **Room Management**: Built-in room system for channel management
-- **Better Error Handling**: More robust error handling and recovery
-- **Cross-Platform**: Better support across different browsers and environments
-- **Event-Based**: Cleaner event-based API compared to message parsing
+  return true;
+};
 
-### Key Changes
-- Replaced `WebSocketServer` with `SocketIOServer`
-- Changed from message parsing to event-based communication
-- Updated authentication to use Socket.IO middleware
-- Replaced manual room management with Socket.IO rooms
-- Updated all event handlers to use Socket.IO emit methods
+// Upload with progress
+const uploadWithProgress = async (files) => {
+  const formData = new FormData();
+  files.forEach(file => {
+    validateFile(file);
+    formData.append('files', file);
+  });
 
-This documentation provides a comprehensive guide for React frontend team to integrate with the hybrid Jibbr messaging API, using Socket.IO for real-time messaging and REST APIs for file uploads and message history.
+  const xhr = new XMLHttpRequest();
+  
+  xhr.upload.addEventListener('progress', (event) => {
+    if (event.lengthComputable) {
+      const progress = (event.loaded / event.total) * 100;
+      setUploadProgress(progress);
+    }
+  });
+
+  return new Promise((resolve, reject) => {
+    xhr.onload = () => resolve(JSON.parse(xhr.responseText));
+    xhr.onerror = () => reject(new Error('Upload failed'));
+    
+    xhr.open('POST', '/api/upload/files');
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.send(formData);
+  });
+};
+```
+
+### 5. Soft Delete Considerations
+```javascript
+// Handle deleted messages in UI
+const handleMessageDeleted = (messageId) => {
+  setMessages(prev => prev.filter(msg => msg.id !== messageId));
+  
+  // Optionally show a notification
+  showNotification('Message deleted', 'info');
+};
+
+// Prevent actions on deleted messages
+const canInteractWithMessage = (message) => {
+  return !message.deletedAt;
+};
+
+// Show deleted message indicator
+const renderMessage = (message) => {
+  if (message.deletedAt) {
+    return (
+      <div className="message deleted">
+        <em>This message was deleted</em>
+      </div>
+    );
+  }
+  
+  return (
+    <div className="message">
+      {/* Normal message content */}
+    </div>
+  );
+};
+```
+
+### 6. Performance Optimization
+```javascript
+// Paginate message history
+const loadMessages = async (page = 1) => {
+  const response = await fetch(`/api/messages?channelId=${channelId}&page=${page}&limit=50`);
+  const data = await response.json();
+  
+  if (page === 1) {
+    setMessages(data.data.messages);
+  } else {
+    setMessages(prev => [...prev, ...data.data.messages]);
+  }
+  
+  return data.data.pagination;
+};
+
+// Debounce message sending
+const debouncedSend = useCallback(
+  debounce((content) => {
+    socket.emit('send_message', { content, channelId });
+  }, 300),
+  [socket, channelId]
+);
+```
+
+This comprehensive API documentation covers all the new features including soft delete functionality, direct messaging, and updated endpoints. The documentation provides clear examples and best practices for implementing these features in your frontend applications.

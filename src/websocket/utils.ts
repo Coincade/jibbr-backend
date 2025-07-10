@@ -1,68 +1,110 @@
+import { Socket } from 'socket.io';
+import { JwtPayload } from 'jsonwebtoken';
 import jwt from 'jsonwebtoken';
-import { Socket, ChannelClientsMap, ServerMessage } from './types.js';
+import { ChannelClientsMap, ConversationClientsMap } from './types.js';
+
+// Socket.IO client with user info
+export interface SocketWithUser extends Socket {
+  data: {
+    user?: JwtPayload & { id: string; name?: string; image?: string };
+  };
+}
 
 /**
- * Authenticate Socket.IO connection using JWT token
+ * Authenticate socket connection using JWT token
  */
-export const authenticateSocket = (token: string | null): { id: string; name?: string; image?: string } | null => {
+export const authenticateSocket = (token: string): JwtPayload & { id: string; name?: string; image?: string } | null => {
   try {
-    if (!token || !process.env.SECRET_KEY) {
-      console.log('Auth failed: No token or SECRET_KEY');
-      throw new Error('No token or SECRET_KEY');
-    }
-    
-    console.log('Attempting to verify token with SECRET_KEY:', process.env.SECRET_KEY ? 'Present' : 'Missing');
-    
-    const decoded = jwt.verify(token, process.env.SECRET_KEY);
-    console.log('Token decoded successfully:', decoded);
-    
-    if (typeof decoded === 'object' && decoded !== null && 'id' in decoded) {
-      return decoded as { id: string; name?: string; image?: string };
-    } else {
-      console.log('Invalid token payload structure');
-      throw new Error('Invalid token payload');
-    }
+    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayload & { id: string; name?: string; image?: string };
+    return decoded;
   } catch (error) {
-    console.log('JWT verification failed:', error);
+    console.error('Socket authentication failed:', error);
     return null;
   }
 };
 
 /**
- * Broadcast message to all clients in a channel using Socket.IO rooms
+ * Add client to channel room
  */
-export const broadcastToChannel = (
-  channelId: string,
-  event: string,
-  data: any,
-  io: any
-): void => {
+export const addClientToChannel = (socket: Socket, channelId: string, channelClients: ChannelClientsMap): void => {
+  socket.join(channelId);
+  
+  if (!channelClients.has(channelId)) {
+    channelClients.set(channelId, new Set());
+  }
+  channelClients.get(channelId)!.add(socket);
+  
+  console.log(`Client ${socket.id} added to channel ${channelId}`);
+};
+
+/**
+ * Add client to conversation room
+ */
+export const addClientToConversation = (socket: Socket, conversationId: string, conversationClients: ConversationClientsMap): void => {
+  socket.join(conversationId);
+  
+  if (!conversationClients.has(conversationId)) {
+    conversationClients.set(conversationId, new Set());
+  }
+  conversationClients.get(conversationId)!.add(socket);
+  
+  console.log(`Client ${socket.id} added to conversation ${conversationId}`);
+};
+
+/**
+ * Remove client from all channels
+ */
+export const removeClientFromAllChannels = (socket: Socket, channelClients: ChannelClientsMap): void => {
+  for (const [channelId, clients] of channelClients.entries()) {
+    if (clients.has(socket)) {
+      clients.delete(socket);
+      socket.leave(channelId);
+      console.log(`Client ${socket.id} removed from channel ${channelId}`);
+    }
+  }
+};
+
+/**
+ * Remove client from all conversations
+ */
+export const removeClientFromAllConversations = (socket: Socket, conversationClients: ConversationClientsMap): void => {
+  for (const [conversationId, clients] of conversationClients.entries()) {
+    if (clients.has(socket)) {
+      clients.delete(socket);
+      socket.leave(conversationId);
+      console.log(`Client ${socket.id} removed from conversation ${conversationId}`);
+    }
+  }
+};
+
+/**
+ * Broadcast message to channel
+ */
+export const broadcastToChannel = (io: any, channelId: string, event: string, data: any): void => {
   io.to(channelId).emit(event, data);
 };
 
 /**
- * Send error message to client
+ * Broadcast message to conversation
  */
-export const sendError = (socket: Socket, message: string): void => {
-  socket.emit('error', { message });
+export const broadcastToConversation = (io: any, conversationId: string, event: string, data: any): void => {
+  io.to(conversationId).emit(event, data);
 };
 
 /**
- * Send success message to client
+ * Send message to specific user
  */
-export const sendSuccess = (socket: Socket, event: string, data: any): void => {
-  socket.emit(event, data);
+export const sendToUser = (io: any, userId: string, event: string, data: any): void => {
+  io.to(`user_${userId}`).emit(event, data);
 };
 
 /**
- * Validate if user is member of channel
+ * Validate channel membership
  */
-export const validateChannelMembership = async (
-  userId: string,
-  channelId: string
-): Promise<boolean> => {
+export const validateChannelMembership = async (userId: string, channelId: string): Promise<boolean> => {
   try {
     const { default: prisma } = await import('../config/database.js');
+    
     const channelMember = await prisma.channelMember.findFirst({
       where: {
         channelId,
@@ -70,6 +112,7 @@ export const validateChannelMembership = async (
         isActive: true,
       },
     });
+    
     return !!channelMember;
   } catch (error) {
     console.error('Error validating channel membership:', error);
@@ -78,19 +121,91 @@ export const validateChannelMembership = async (
 };
 
 /**
- * Get user info from database
+ * Validate conversation participation
+ */
+export const validateConversationParticipation = async (userId: string, conversationId: string): Promise<boolean> => {
+  try {
+    const { default: prisma } = await import('../config/database.js');
+    
+    const participant = await prisma.conversationParticipant.findFirst({
+      where: {
+        conversationId,
+        userId,
+        isActive: true,
+      },
+    });
+    
+    return !!participant;
+  } catch (error) {
+    console.error('Error validating conversation participation:', error);
+    return false;
+  }
+};
+
+/**
+ * Get or create conversation between two users
+ */
+export const getOrCreateConversation = async (userId1: string, userId2: string): Promise<string> => {
+  try {
+    const { default: prisma } = await import('../config/database.js');
+    
+    // Check if conversation already exists
+    const existingConversation = await prisma.conversation.findFirst({
+      where: {
+        participants: {
+          every: {
+            userId: {
+              in: [userId1, userId2]
+            },
+            isActive: true
+          }
+        }
+      },
+      include: {
+        participants: true
+      }
+    });
+    
+    if (existingConversation && existingConversation.participants.length === 2) {
+      return existingConversation.id;
+    }
+    
+    // Create new conversation
+    const conversation = await prisma.conversation.create({
+      data: {
+        participants: {
+          create: [
+            { userId: userId1 },
+            { userId: userId2 }
+          ]
+        }
+      }
+    });
+    
+    return conversation.id;
+  } catch (error) {
+    console.error('Error getting or creating conversation:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get user info
  */
 export const getUserInfo = async (userId: string) => {
   try {
     const { default: prisma } = await import('../config/database.js');
+    
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: {
         id: true,
         name: true,
+        email: true,
         image: true,
       },
     });
+    
     return user;
   } catch (error) {
     console.error('Error getting user info:', error);
@@ -99,35 +214,25 @@ export const getUserInfo = async (userId: string) => {
 };
 
 /**
- * Add client to channel for messaging using Socket.IO rooms
+ * Get conversation participants
  */
-export const addClientToChannel = (
-  socket: Socket,
-  channelId: string,
-  channelClients: ChannelClientsMap
-): void => {
-  // Join Socket.IO room
-  socket.join(channelId);
-  
-  // Also track in our map for stats
-  if (!channelClients.has(channelId)) {
-    channelClients.set(channelId, new Set());
-  }
-  channelClients.get(channelId)!.add(socket);
-};
-
-/**
- * Remove client from all channels on disconnect
- */
-export const removeClientFromAllChannels = (
-  socket: Socket,
-  channelClients: ChannelClientsMap
-): void => {
-  for (const [channelId, clients] of channelClients.entries()) {
-    clients.delete(socket);
-    // Clean up empty channel sets
-    if (clients.size === 0) {
-      channelClients.delete(channelId);
-    }
+export const getConversationParticipants = async (conversationId: string): Promise<string[]> => {
+  try {
+    const { default: prisma } = await import('../config/database.js');
+    
+    const participants = await prisma.conversationParticipant.findMany({
+      where: {
+        conversationId,
+        isActive: true,
+      },
+      select: {
+        userId: true,
+      },
+    });
+    
+    return participants.map(p => p.userId);
+  } catch (error) {
+    console.error('Error getting conversation participants:', error);
+    return [];
   }
 }; 

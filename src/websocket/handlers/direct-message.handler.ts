@@ -1,16 +1,16 @@
-import { Socket, ChannelClientsMap, SendMessageMessage, EditMessageMessage, DeleteMessageMessage, ForwardMessageMessage, MessageData } from '../types.js';
-import { broadcastToChannel, validateChannelMembership, getUserInfo } from '../utils.js';
+import { Socket, ConversationClientsMap, SendDirectMessageMessage, EditDirectMessageMessage, DeleteDirectMessageMessage, DirectMessageData } from '../types.js';
+import { broadcastToConversation, validateConversationParticipation, getUserInfo } from '../utils.js';
 import { sendMessageSchema, updateMessageSchema } from '../../validation/message.validations.js';
 import { ZodError } from 'zod';
 
 /**
- * Handle send message event
+ * Handle send direct message event
  */
-export const handleSendMessage = async (
+export const handleSendDirectMessage = async (
   socket: Socket,
-  data: SendMessageMessage,
-  channelClients: ChannelClientsMap,
-  io: any // <-- add io parameter
+  data: SendDirectMessageMessage,
+  conversationClients: ConversationClientsMap,
+  io: any
 ): Promise<void> => {
   try {
     if (!socket.data.user) {
@@ -20,14 +20,13 @@ export const handleSendMessage = async (
     // Validate input
     const payload = sendMessageSchema.parse({
       content: data.content,
-      channelId: data.channelId,
       replyToId: data.replyToId,
     });
 
-    // Validate channel membership
-    const isMember = await validateChannelMembership(socket.data.user.id, data.channelId!);
-    if (!isMember) {
-      throw new Error('You are not a member of this channel');
+    // Validate conversation participation
+    const isParticipant = await validateConversationParticipation(socket.data.user.id, data.conversationId);
+    if (!isParticipant) {
+      throw new Error('You are not a participant of this conversation');
     }
 
     // Get user info
@@ -52,7 +51,7 @@ export const handleSendMessage = async (
     // Prepare message data
     const messageData: any = {
       content: payload.content,
-      channelId: payload.channelId,
+      conversationId: data.conversationId,
       userId: socket.data.user.id,
       replyToId: payload.replyToId,
     };
@@ -143,8 +142,8 @@ export const handleSendMessage = async (
       });
 
       if (messageWithAttachments) {
-        // Broadcast to channel using Socket.IO (to everyone, including sender)
-        io.to(data.channelId!).emit('new_message', {
+        // Broadcast to conversation using Socket.IO
+        io.to(data.conversationId).emit('new_direct_message', {
           ...messageWithAttachments,
           createdAt: messageWithAttachments.createdAt.toISOString(),
           updatedAt: messageWithAttachments.updatedAt.toISOString(),
@@ -156,12 +155,13 @@ export const handleSendMessage = async (
             ...attachment,
             createdAt: attachment.createdAt.toISOString(),
           })),
-        } as MessageData);
+        } as DirectMessageData);
         return;
       }
     }
-    // Broadcast to channel using Socket.IO (to everyone, including sender)
-    io.to(data.channelId!).emit('new_message', {
+
+    // Broadcast to conversation using Socket.IO
+    io.to(data.conversationId).emit('new_direct_message', {
       ...message,
       createdAt: message.createdAt.toISOString(),
       updatedAt: message.updatedAt.toISOString(),
@@ -173,25 +173,25 @@ export const handleSendMessage = async (
         ...attachment,
         createdAt: attachment.createdAt.toISOString(),
       })),
-    } as MessageData);
+    } as DirectMessageData);
 
   } catch (error) {
     if (error instanceof ZodError) {
       socket.emit('error', { message: 'Invalid message data' });
     } else {
-      console.error('Error handling send message:', error);
-      socket.emit('error', { message: error instanceof Error ? error.message : 'Failed to send message' });
+      console.error('Error handling send direct message:', error);
+      socket.emit('error', { message: error instanceof Error ? error.message : 'Failed to send direct message' });
     }
   }
 };
 
 /**
- * Handle edit message event
+ * Handle edit direct message event
  */
-export const handleEditMessage = async (
+export const handleEditDirectMessage = async (
   socket: Socket,
-  data: EditMessageMessage,
-  channelClients: ChannelClientsMap
+  data: EditDirectMessageMessage,
+  conversationClients: ConversationClientsMap
 ): Promise<void> => {
   try {
     if (!socket.data.user) {
@@ -204,10 +204,10 @@ export const handleEditMessage = async (
       content: data.content,
     });
 
-    // Validate channel membership
-    const isMember = await validateChannelMembership(socket.data.user.id, data.channelId!);
-    if (!isMember) {
-      throw new Error('You are not a member of this channel');
+    // Validate conversation participation
+    const isParticipant = await validateConversationParticipation(socket.data.user.id, data.conversationId);
+    if (!isParticipant) {
+      throw new Error('You are not a participant of this conversation');
     }
 
     // Update message in database
@@ -224,40 +224,48 @@ export const handleEditMessage = async (
       throw new Error('You can only edit your own messages');
     }
 
-    await prisma.message.update({
+    if (message.conversationId !== data.conversationId) {
+      throw new Error('Message does not belong to this conversation');
+    }
+
+    const updatedMessage = await prisma.message.update({
       where: { id: data.messageId },
       data: { content: payload.content },
     });
 
-    // Broadcast to channel using Socket.IO
-    socket.to(data.channelId!).emit('message_edited', {
+    // Broadcast to conversation using Socket.IO
+    socket.to(data.conversationId).emit('direct_message_edited', {
       messageId: data.messageId,
       content: payload.content,
     });
 
   } catch (error) {
-    console.error('Error handling edit message:', error);
-    socket.emit('error', { message: error instanceof Error ? error.message : 'Failed to edit message' });
+    if (error instanceof ZodError) {
+      socket.emit('error', { message: 'Invalid message data' });
+    } else {
+      console.error('Error handling edit direct message:', error);
+      socket.emit('error', { message: error instanceof Error ? error.message : 'Failed to edit direct message' });
+    }
   }
 };
 
 /**
- * Handle delete message event (Soft Delete)
+ * Handle delete direct message event (Soft Delete)
  */
-export const handleDeleteMessage = async (
+export const handleDeleteDirectMessage = async (
   socket: Socket,
-  data: DeleteMessageMessage,
-  channelClients: ChannelClientsMap
+  data: DeleteDirectMessageMessage,
+  conversationClients: ConversationClientsMap
 ): Promise<void> => {
   try {
     if (!socket.data.user) {
       throw new Error('User not authenticated');
     }
 
-    // Validate channel membership
-    const isMember = await validateChannelMembership(socket.data.user.id, data.channelId!);
-    if (!isMember) {
-      throw new Error('You are not a member of this channel');
+    // Validate conversation participation
+    const isParticipant = await validateConversationParticipation(socket.data.user.id, data.conversationId);
+    if (!isParticipant) {
+      throw new Error('You are not a participant of this conversation');
     }
 
     // Soft delete message from database
@@ -274,6 +282,10 @@ export const handleDeleteMessage = async (
       throw new Error('You can only delete your own messages');
     }
 
+    if (message.conversationId !== data.conversationId) {
+      throw new Error('Message does not belong to this conversation');
+    }
+
     // Check if message is already deleted
     if (message.deletedAt) {
       throw new Error('Message is already deleted');
@@ -288,97 +300,128 @@ export const handleDeleteMessage = async (
       },
     });
 
-    // Broadcast to channel using Socket.IO
-    socket.to(data.channelId!).emit('message_deleted', {
+    // Broadcast to conversation using Socket.IO
+    socket.to(data.conversationId).emit('direct_message_deleted', {
       messageId: data.messageId,
     });
 
   } catch (error) {
-    console.error('Error handling delete message:', error);
-    socket.emit('error', { message: error instanceof Error ? error.message : 'Failed to delete message' });
+    console.error('Error handling delete direct message:', error);
+    socket.emit('error', { message: error instanceof Error ? error.message : 'Failed to delete direct message' });
   }
 };
 
 /**
- * Handle forward message event
+ * Handle add reaction to direct message event
  */
-export const handleForwardMessage = async (
+export const handleAddDirectReaction = async (
   socket: Socket,
-  data: ForwardMessageMessage,
-  channelClients: ChannelClientsMap
+  data: any,
+  conversationClients: ConversationClientsMap
 ): Promise<void> => {
   try {
     if (!socket.data.user) {
       throw new Error('User not authenticated');
     }
 
-    // Validate channel membership for both source and target channels
-    const isSourceMember = await validateChannelMembership(socket.data.user.id, data.channelId);
-    const isTargetMember = await validateChannelMembership(socket.data.user.id, data.targetChannelId);
-    
-    if (!isSourceMember || !isTargetMember) {
-      throw new Error('You are not a member of one or both channels');
+    // Validate conversation participation
+    const isParticipant = await validateConversationParticipation(socket.data.user.id, data.conversationId);
+    if (!isParticipant) {
+      throw new Error('You are not a participant of this conversation');
     }
 
-    // Get original message
+    // Add reaction to database
     const { default: prisma } = await import('../../config/database.js');
-    const originalMessage = await prisma.message.findUnique({
+    const message = await prisma.message.findUnique({
       where: { id: data.messageId },
+    });
+
+    if (!message) {
+      throw new Error('Message not found');
+    }
+
+    if (message.conversationId !== data.conversationId) {
+      throw new Error('Message does not belong to this conversation');
+    }
+
+    const reaction = await prisma.reaction.create({
+      data: {
+        emoji: data.emoji,
+        messageId: data.messageId,
+        userId: socket.data.user.id,
+      },
       include: {
         user: {
           select: {
             id: true,
             name: true,
-            image: true,
-          },
-        },
-        attachments: true,
-        reactions: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
           },
         },
       },
     });
 
-    if (!originalMessage) {
-      throw new Error('Original message not found');
-    }
-
-    // Create forwarded message record
-    await prisma.forwardedMessage.create({
-      data: {
-        originalMessageId: data.messageId,
-        forwardedByUserId: socket.data.user.id,
-        channelId: data.targetChannelId,
-      },
-    });
-
-    // Broadcast to target channel using Socket.IO
-    socket.to(data.targetChannelId).emit('message_forwarded', {
-      originalMessage: {
-        ...originalMessage,
-        createdAt: originalMessage.createdAt.toISOString(),
-        updatedAt: originalMessage.updatedAt.toISOString(),
-        reactions: originalMessage.reactions.map(reaction => ({
-          ...reaction,
-          createdAt: reaction.createdAt.toISOString(),
-        })),
-        attachments: originalMessage.attachments.map(attachment => ({
-          ...attachment,
-          createdAt: attachment.createdAt.toISOString(),
-        })),
-      } as MessageData,
-      targetChannelId: data.targetChannelId,
+    // Broadcast to conversation using Socket.IO
+    socket.to(data.conversationId).emit('direct_reaction_added', {
+      ...reaction,
+      createdAt: reaction.createdAt.toISOString(),
     });
 
   } catch (error) {
-    console.error('Error handling forward message:', error);
-    socket.emit('error', { message: error instanceof Error ? error.message : 'Failed to forward message' });
+    console.error('Error handling add direct reaction:', error);
+    socket.emit('error', { message: error instanceof Error ? error.message : 'Failed to add reaction' });
+  }
+};
+
+/**
+ * Handle remove reaction from direct message event
+ */
+export const handleRemoveDirectReaction = async (
+  socket: Socket,
+  data: any,
+  conversationClients: ConversationClientsMap
+): Promise<void> => {
+  try {
+    if (!socket.data.user) {
+      throw new Error('User not authenticated');
+    }
+
+    // Validate conversation participation
+    const isParticipant = await validateConversationParticipation(socket.data.user.id, data.conversationId);
+    if (!isParticipant) {
+      throw new Error('You are not a participant of this conversation');
+    }
+
+    // Remove reaction from database
+    const { default: prisma } = await import('../../config/database.js');
+    const message = await prisma.message.findUnique({
+      where: { id: data.messageId },
+    });
+
+    if (!message) {
+      throw new Error('Message not found');
+    }
+
+    if (message.conversationId !== data.conversationId) {
+      throw new Error('Message does not belong to this conversation');
+    }
+
+    await prisma.reaction.deleteMany({
+      where: {
+        messageId: data.messageId,
+        userId: socket.data.user.id,
+        emoji: data.emoji,
+      },
+    });
+
+    // Broadcast to conversation using Socket.IO
+    socket.to(data.conversationId).emit('direct_reaction_removed', {
+      messageId: data.messageId,
+      emoji: data.emoji,
+      userId: socket.data.user.id,
+    });
+
+  } catch (error) {
+    console.error('Error handling remove direct reaction:', error);
+    socket.emit('error', { message: error instanceof Error ? error.message : 'Failed to remove reaction' });
   }
 }; 

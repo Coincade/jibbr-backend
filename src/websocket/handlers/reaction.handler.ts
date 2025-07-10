@@ -15,7 +15,7 @@ export const handleAddReaction = async (
     }
 
     // Validate channel membership
-    const isMember = await validateChannelMembership(socket.data.user.id, data.channelId);
+    const isMember = await validateChannelMembership(socket.data.user.id, data.channelId!);
     if (!isMember) {
       throw new Error('You are not a member of this channel');
     }
@@ -39,7 +39,7 @@ export const handleAddReaction = async (
     });
 
     // Broadcast to channel using Socket.IO
-    socket.to(data.channelId).emit('reaction_added', {
+    socket.to(data.channelId!).emit('reaction_added', {
       id: reaction.id,
       emoji: reaction.emoji,
       messageId: reaction.messageId,
@@ -71,7 +71,7 @@ export const handleRemoveReaction = async (
     }
 
     // Validate channel membership
-    const isMember = await validateChannelMembership(socket.data.user.id, data.channelId);
+    const isMember = await validateChannelMembership(socket.data.user.id, data.channelId!);
     if (!isMember) {
       throw new Error('You are not a member of this channel');
     }
@@ -95,7 +95,7 @@ export const handleRemoveReaction = async (
     });
 
     // Broadcast to channel using Socket.IO
-    socket.to(data.channelId).emit('reaction_removed', {
+    socket.to(data.channelId!).emit('reaction_removed', {
       messageId: data.messageId,
       emoji: data.emoji,
       userId: socket.data.user.id,

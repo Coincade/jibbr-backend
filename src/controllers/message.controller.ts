@@ -235,6 +235,7 @@ export const getMessages = async (req: Request, res: Response) => {
     const messages = await prisma.message.findMany({
       where: {
         channelId: payload.channelId,
+        deletedAt: null, // Exclude soft-deleted messages
       },
       include: {
         user: {
@@ -281,6 +282,7 @@ export const getMessages = async (req: Request, res: Response) => {
     const total = await prisma.message.count({
       where: {
         channelId: payload.channelId,
+        deletedAt: null, // Exclude soft-deleted messages
       },
     });
 
@@ -387,7 +389,7 @@ export const getMessage = async (req: Request, res: Response) => {
     // Check if user is member of the channel
     const channelMember = await prisma.channelMember.findFirst({
       where: {
-        channelId: message.channelId,
+        channelId: message.channelId!,
         userId: user.id,
         isActive: true,
       },
@@ -440,7 +442,7 @@ export const updateMessage = async (req: Request, res: Response) => {
     // Check if user is still a member of the channel
     const channelMember = await prisma.channelMember.findFirst({
       where: {
-        channelId: message.channelId,
+        channelId: message.channelId!,
         userId: user.id,
         isActive: true,
       },
@@ -523,10 +525,15 @@ export const deleteMessage = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Message not found" });
     }
 
+    // Check if message is already deleted
+    if (message.deletedAt) {
+      return res.status(400).json({ message: "Message is already deleted" });
+    }
+
     // Check if user is the message author or channel admin
     const channelMember = await prisma.channelMember.findFirst({
       where: {
-        channelId: message.channelId,
+        channelId: message.channelId!,
         userId: user.id,
         isActive: true,
       },
@@ -539,7 +546,7 @@ export const deleteMessage = async (req: Request, res: Response) => {
     // Only message author or workspace admin can delete
     const workspaceMember = await prisma.member.findFirst({
       where: {
-        workspaceId: message.channel.workspaceId,
+        workspaceId: message.channel?.workspaceId!,
         userId: user.id,
         isActive: true,
       },
@@ -549,17 +556,13 @@ export const deleteMessage = async (req: Request, res: Response) => {
       return res.status(403).json({ message: "You can only delete your own messages" });
     }
 
-    // Delete attachments from Digital Ocean Spaces
-    for (const attachment of message.attachments) {
-      try {
-        await deleteFromSpaces(attachment.url);
-      } catch (error) {
-        console.error("Failed to delete attachment:", error);
-      }
-    }
-
-    await prisma.message.delete({
+    // Soft delete the message
+    await prisma.message.update({
       where: { id: payload.messageId },
+      data: { 
+        deletedAt: new Date(),
+        content: '[This message was deleted]' // Optional: replace content
+      },
     });
 
     return res.status(200).json({
@@ -599,7 +602,7 @@ export const reactToMessage = async (req: Request, res: Response) => {
     // Check if user is member of the channel
     const channelMember = await prisma.channelMember.findFirst({
       where: {
-        channelId: message.channelId,
+        channelId: message.channelId!,
         userId: user.id,
         isActive: true,
       },
@@ -735,7 +738,7 @@ export const forwardMessage = async (req: Request, res: Response) => {
     const [sourceChannelMember, targetChannelMember] = await Promise.all([
       prisma.channelMember.findFirst({
         where: {
-          channelId: originalMessage.channelId,
+          channelId: originalMessage.channelId!,
           userId: user.id,
           isActive: true,
         },

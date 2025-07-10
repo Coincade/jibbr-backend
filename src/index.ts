@@ -33,8 +33,9 @@ import verifyRoutes from "./routes/verify.route.js";
 import workspaceRoutes from "./routes/workspace.route.js";
 import channelRoutes from "./routes/channel.route.js";
 import uploadRoutes from "./routes/upload.route.js";
+import conversationRoutes from "./routes/conversation.route.js";
 import { appLimiter } from "./config/rateLimit.js";
-import WebSocketService from "./websocket/index.js";
+import { WebSocketService } from "./websocket/index.js";
 
 const app: Application = express();
 const server = http.createServer(app);
@@ -51,6 +52,7 @@ app.use("/api/verify", verifyRoutes);
 app.use("/api/workspace", workspaceRoutes);
 app.use("/api/channel", channelRoutes);
 app.use("/api/upload", uploadRoutes);
+app.use("/api/conversations", conversationRoutes);
 
 //Set view engine
 app.set('view engine', 'ejs');
