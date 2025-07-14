@@ -1,7 +1,8 @@
 import { Socket, ConversationClientsMap, SendDirectMessageMessage, EditDirectMessageMessage, DeleteDirectMessageMessage, DirectMessageData } from '../types.js';
 import { broadcastToConversation, validateConversationParticipation, getUserInfo } from '../utils.js';
-import { sendMessageSchema, updateMessageSchema } from '../../validation/message.validations.js';
+import { sendDirectMessageSchema, updateMessageSchema } from '../../validation/message.validations.js';
 import { ZodError } from 'zod';
+import { NotificationService } from '../../services/notification.service.js';
 
 /**
  * Handle send direct message event
@@ -18,8 +19,9 @@ export const handleSendDirectMessage = async (
     }
 
     // Validate input
-    const payload = sendMessageSchema.parse({
+    const payload = sendDirectMessageSchema.parse({
       content: data.content,
+      conversationId: data.conversationId,
       replyToId: data.replyToId,
     });
 
@@ -159,6 +161,14 @@ export const handleSendDirectMessage = async (
         return;
       }
     }
+
+    // Create notifications for conversation participants (except sender)
+    await NotificationService.notifyNewDirectMessage(
+      data.conversationId,
+      message.id,
+      socket.data.user.id,
+      payload.content
+    );
 
     // Broadcast to conversation using Socket.IO
     io.to(data.conversationId).emit('new_direct_message', {

@@ -191,6 +191,43 @@ export interface DirectReactionRemovedEvent extends ServerMessage {
   userId: string;
 }
 
+// Notification events
+export interface UnreadCountsUpdatedEvent extends ServerMessage {
+  type: 'unread_counts_updated';
+  data: {
+    totalUnread: number;
+    channels: Array<{
+      channelId: string;
+      channelName: string;
+      workspaceId: string;
+      unreadCount: number;
+      lastReadAt: string | null;
+    }>;
+    conversations: Array<{
+      conversationId: string;
+      participant: {
+        id: string;
+        name?: string;
+        image?: string;
+      } | null;
+      unreadCount: number;
+      lastReadAt: string | null;
+    }>;
+  };
+}
+
+export interface NewNotificationEvent extends ServerMessage {
+  type: 'new_notification';
+  notification: {
+    id: string;
+    type: string;
+    title: string;
+    message: string;
+    data?: any;
+    createdAt: string;
+  };
+}
+
 export interface ConversationJoinedEvent extends ServerMessage {
   type: 'conversation_joined';
   conversationId: string;

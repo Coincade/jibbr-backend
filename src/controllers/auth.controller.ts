@@ -97,7 +97,7 @@ export const login = async (req: Request, res: Response) => {
     };
 
     //Generate JWT Token
-    let token = jwt.sign(JWTPayload, process.env.SECRET_KEY as string, {
+    let token = jwt.sign(JWTPayload, process.env.JWT_SECRET as string, {
       expiresIn: "30d",
     })
 

@@ -2,6 +2,7 @@ import { Socket, ChannelClientsMap, SendMessageMessage, EditMessageMessage, Dele
 import { broadcastToChannel, validateChannelMembership, getUserInfo } from '../utils.js';
 import { sendMessageSchema, updateMessageSchema } from '../../validation/message.validations.js';
 import { ZodError } from 'zod';
+import { NotificationService } from '../../services/notification.service.js';
 
 /**
  * Handle send message event
@@ -160,6 +161,23 @@ export const handleSendMessage = async (
         return;
       }
     }
+    // Get channel info for notifications
+    const channel = await prisma.channel.findUnique({
+      where: { id: data.channelId },
+      select: { name: true },
+    });
+
+    // Create notifications for channel members (except sender)
+    if (channel) {
+      await NotificationService.notifyNewChannelMessage(
+        data.channelId!,
+        message.id,
+        socket.data.user.id,
+        payload.content,
+        channel.name
+      );
+    }
+
     // Broadcast to channel using Socket.IO (to everyone, including sender)
     io.to(data.channelId!).emit('new_message', {
       ...message,

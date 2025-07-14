@@ -7,6 +7,13 @@ export const sendMessageSchema = z.object({
   replyToId: z.string().optional(), // Optional reply to another message
 });
 
+// Send direct message validation
+export const sendDirectMessageSchema = z.object({
+  content: z.string().min(1, "Message content is required").max(2000, "Message too long"),
+  conversationId: z.string().min(1, "Conversation ID is required"),
+  replyToId: z.string().optional(), // Optional reply to another message
+});
+
 // React to message validation
 export const reactToMessageSchema = z.object({
   messageId: z.string().min(1, "Message ID is required"),
@@ -49,6 +56,7 @@ export const removeReactionSchema = z.object({
 });
 
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
+export type SendDirectMessageInput = z.infer<typeof sendDirectMessageSchema>;
 export type ReactToMessageInput = z.infer<typeof reactToMessageSchema>;
 export type ForwardMessageInput = z.infer<typeof forwardMessageSchema>;
 export type GetMessagesInput = z.infer<typeof getMessagesSchema>;

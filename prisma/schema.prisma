@@ -33,6 +33,10 @@ model User {
   forwardedMessages ForwardedMessage[]
   // Direct messaging
   conversations ConversationParticipant[]
+  // Notifications
+  userNotifications UserNotification[]
+  conversationReadStatuses ConversationReadStatus[]
+  notificationPreferences UserNotificationPreference[]
 }
 
 model Workspace {
@@ -75,6 +79,7 @@ model Conversation {
   updatedAt   DateTime  @updatedAt @default(now())
   messages    Message[]
   participants ConversationParticipant[]
+  readStatuses ConversationReadStatus[]
   
   @@unique([id])
 }
@@ -191,6 +196,63 @@ model ChannelMember {
   userId      String
   user        User      @relation(fields: [userId], references: [id])
   isActive    Boolean   @default(true)
+  // Notification tracking
+  lastReadAt  DateTime?
+  unreadCount Int       @default(0)
 
   @@unique([channelId, userId])
+}
+
+// Notification system models
+model UserNotification {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        NotificationType
+  title       String
+  message     String
+  data        Json?     // Additional data like channelId, conversationId, messageId
+  isRead      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  readAt      DateTime?
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+}
+
+enum NotificationType {
+  NEW_MESSAGE
+  MENTION
+  REACTION
+  CHANNEL_INVITE
+  WORKSPACE_INVITE
+  SYSTEM
+}
+
+// Track read status for conversations
+model ConversationReadStatus {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastReadAt     DateTime     @default(now())
+  unreadCount    Int          @default(0)
+
+  @@unique([conversationId, userId])
+  @@index([userId, lastReadAt])
+}
+
+// User notification preferences
+model UserNotificationPreference {
+  id                    String    @id @default(cuid())
+  userId                String    @unique
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailNotifications     Boolean   @default(true)
+  pushNotifications     Boolean   @default(true)
+  desktopNotifications  Boolean   @default(true)
+  soundEnabled          Boolean   @default(true)
+  mentionNotifications  Boolean   @default(true)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt @default(now())
 }
