@@ -1,6 +1,6 @@
 import { Socket, ConversationClientsMap, SendDirectMessageMessage, EditDirectMessageMessage, DeleteDirectMessageMessage, DirectMessageData } from '../types.js';
 import { broadcastToConversation, validateConversationParticipation, getUserInfo } from '../utils.js';
-import { sendMessageSchema, updateMessageSchema } from '../../validation/message.validations.js';
+import { sendDirectMessageSchema, updateMessageSchema } from '../../validation/message.validations.js';
 import { ZodError } from 'zod';
 import { NotificationService } from '../../services/notification.service.js';
 
@@ -19,8 +19,9 @@ export const handleSendDirectMessage = async (
     }
 
     // Validate input
-    const payload = sendMessageSchema.parse({
+    const payload = sendDirectMessageSchema.parse({
       content: data.content,
+      conversationId: data.conversationId,
       replyToId: data.replyToId,
     });
 
