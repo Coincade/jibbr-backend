@@ -504,6 +504,12 @@ export const hardDeleteChannel = async (req: Request, res: Response) => {
     }
 
     const channelId = req.params.id;
+    const deletePass = req.body.DELETE_PASS;
+
+    // Check if DELETE_PASS is provided and matches environment variable
+    if (!deletePass || deletePass !== process.env.DELETE_PASS) {
+      return res.status(403).json({ message: "Invalid delete password" });
+    }
 
     // Get the channel with workspace info
     const channel = await prisma.channel.findFirst({
@@ -518,28 +524,6 @@ export const hardDeleteChannel = async (req: Request, res: Response) => {
 
     if (!channel) {
       return res.status(404).json({ message: "Channel not found" });
-    }
-
-    // Check if user is a member of the workspace
-    const member = await prisma.member.findFirst({
-      where: {
-        userId: user.id,
-        workspaceId: channel.workspaceId,
-        isActive: true
-      }
-    });
-
-    if (!member) {
-      return res.status(403).json({ message: "You are not a member of this workspace" });
-    }
-
-    // Check if user has permission to delete the channel
-    // Only workspace admin, moderator, or channel creator can delete
-    const isWorkspaceAdmin = member.role === "ADMIN" || member.role === "MODERATOR";
-    const isChannelCreator = channel.workspace.userId === user.id;
-
-    if (!isWorkspaceAdmin && !isChannelCreator) {
-      return res.status(403).json({ message: "You don't have permission to delete this channel" });
     }
 
     // Hard delete everything related to the channel

@@ -22,7 +22,7 @@ router.put("/:id", authMiddleware as unknown as RequestHandler, updateChannel as
 // Soft delete a channel (preserves messages and reactions)
 router.delete("/:id/soft", authMiddleware as unknown as RequestHandler, softDeleteChannel as unknown as RequestHandler);
 
-// Hard delete a channel (permanently removes everything - for development/testing only)
+// Hard delete a channel (permanently removes everything - requires DELETE_PASS)
 router.delete("/:id/hard", authMiddleware as unknown as RequestHandler, hardDeleteChannel as unknown as RequestHandler);
 
 // Get a specific channel (this should be last to avoid catching other routes)

@@ -47,6 +47,7 @@ model Workspace {
   isActive    Boolean   @default(true)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt @default(now())
+  deletedAt   DateTime?
   userId      String
   user        User      @relation(fields: [userId], references: [id])
   members     Member[]
