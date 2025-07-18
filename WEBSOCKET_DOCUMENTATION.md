@@ -81,7 +81,15 @@ socket.emit('forward_message', {
 });
 ```
 
-##### 7. Add Reaction
+##### 7. Forward Message to Direct Conversation
+```javascript
+socket.emit('forward_to_direct', {
+  messageId: "message_123",
+  targetConversationId: "conversation_456"
+});
+```
+
+##### 8. Add Reaction
 ```javascript
 socket.emit('add_reaction', {
   messageId: "message_123",
@@ -90,7 +98,7 @@ socket.emit('add_reaction', {
 });
 ```
 
-##### 8. Remove Reaction
+##### 9. Remove Reaction
 ```javascript
 socket.emit('remove_reaction', {
   messageId: "message_123",
@@ -199,14 +207,21 @@ socket.on('message_forwarded', (data) => {
 });
 ```
 
-##### 5. Reaction Added
+##### 5. Message Forwarded to Direct
+```javascript
+socket.on('message_forwarded_to_direct', (data) => {
+  console.log('Message forwarded to direct conversation:', data);
+});
+```
+
+##### 6. Reaction Added
 ```javascript
 socket.on('reaction_added', (reaction) => {
   console.log('Reaction added:', reaction);
 });
 ```
 
-##### 6. Reaction Removed
+##### 7. Reaction Removed
 ```javascript
 socket.on('reaction_removed', (data) => {
   console.log('Reaction removed:', data);
@@ -301,9 +316,181 @@ socket.on('error', (data) => {
 });
 ```
 
-## Data Types
+## Forwarding Functionality
 
-### Message Object (Channel)
+### Overview
+The WebSocket API supports forwarding messages between channels and direct conversations. This allows users to share messages across different communication contexts.
+
+### Supported Forwarding Scenarios
+
+| From | To | Event | Description |
+|------|----|-------|-------------|
+| **Channel** | **Channel** | `forward_message` | Forward from one channel to another channel |
+| **Channel** | **Direct Message** | `forward_to_direct` | Forward from channel to direct conversation |
+| **Direct Message** | **Direct Message** | `forward_to_direct` | Forward from one direct conversation to another |
+| **Direct Message** | **Channel** | `forward_message` | Forward from direct conversation to channel |
+
+### Forwarding Implementation
+
+#### Forwarding from Channel to Channel
+```javascript
+// Client sends forward request
+socket.emit('forward_message', {
+  messageId: "message_123",
+  channelId: "source_channel_123",
+  targetChannelId: "target_channel_456"
+});
+
+// Server responds with forwarded message
+socket.on('message_forwarded', (data) => {
+  console.log('Message forwarded to channel:', data);
+  // data.originalMessage - The original message being forwarded
+  // data.targetChannelId - The target channel ID
+});
+```
+
+#### Forwarding to Direct Conversation
+```javascript
+// Client sends forward request
+socket.emit('forward_to_direct', {
+  messageId: "message_123",
+  targetConversationId: "conversation_456"
+});
+
+// Server responds with forwarded message
+socket.on('message_forwarded_to_direct', (data) => {
+  console.log('Message forwarded to direct conversation:', data);
+  // data.originalMessage - The original message being forwarded
+  // data.targetConversationId - The target conversation ID
+});
+```
+
+### Forwarding Data Structure
+
+#### Forwarded Message Event Data
+```typescript
+interface ForwardedMessageData {
+  originalMessage: {
+    id: string;
+    content: string;
+    channelId?: string;
+    conversationId?: string;
+    userId: string;
+    createdAt: string;
+    updatedAt: string;
+    user: {
+      id: string;
+      name: string;
+      image: string | null;
+    };
+    attachments: Attachment[];
+    reactions: Reaction[];
+  };
+  targetChannelId?: string;
+  targetConversationId?: string;
+}
+```
+
+### Forwarding Permissions
+
+#### Channel Forwarding Permissions
+- User must be a member of the **source channel**
+- User must be a member of the **target channel**
+- Original message must exist and not be deleted
+
+#### Direct Message Forwarding Permissions
+- User must be a participant of the **source conversation** (if forwarding from DM)
+- User must be a member of the **source channel** (if forwarding from channel)
+- User must be a participant of the **target conversation**
+- Original message must exist and not be deleted
+
+### Error Handling for Forwarding
+
+```javascript
+socket.on('error', (data) => {
+  if (data.message.includes('forward')) {
+    console.error('Forwarding error:', data.message);
+    
+    // Common forwarding errors:
+    // - "You are not a member of this channel"
+    // - "You are not a participant of this conversation"
+    // - "Original message not found or has been deleted"
+    // - "Failed to forward message"
+  }
+});
+```
+
+### Forwarding Best Practices
+
+#### 1. UI Implementation
+```javascript
+// Show forwarding options based on message context
+function showForwardOptions(message) {
+  const options = [];
+  
+  // Add channel options if user has access
+  userChannels.forEach(channel => {
+    options.push({
+      type: 'channel',
+      id: channel.id,
+      name: channel.name
+    });
+  });
+  
+  // Add conversation options if user has access
+  userConversations.forEach(conversation => {
+    options.push({
+      type: 'conversation',
+      id: conversation.id,
+      name: conversation.participants.map(p => p.name).join(', ')
+    });
+  });
+  
+  return options;
+}
+```
+
+#### 2. Forwarding with Context
+```javascript
+// Forward message with additional context
+function forwardMessage(messageId, targetId, targetType) {
+  if (targetType === 'channel') {
+    socket.emit('forward_message', {
+      messageId,
+      targetChannelId: targetId
+    });
+  } else if (targetType === 'conversation') {
+    socket.emit('forward_to_direct', {
+      messageId,
+      targetConversationId: targetId
+    });
+  }
+}
+```
+
+#### 3. Handling Forwarded Messages
+```javascript
+// Handle incoming forwarded messages
+socket.on('message_forwarded', (data) => {
+  // Add forwarded message to target channel
+  addMessageToChannel(data.targetChannelId, {
+    ...data.originalMessage,
+    isForwarded: true,
+    forwardedFrom: data.originalMessage.channelId || data.originalMessage.conversationId
+  });
+});
+
+socket.on('message_forwarded_to_direct', (data) => {
+  // Add forwarded message to target conversation
+  addMessageToConversation(data.targetConversationId, {
+    ...data.originalMessage,
+    isForwarded: true,
+    forwardedFrom: data.originalMessage.channelId || data.originalMessage.conversationId
+  });
+});
+```
+
+## Data Types
 ```typescript
 interface Message {
   id: string;
@@ -453,6 +640,18 @@ io.to(channelId).emit('message_edited', {
 io.to(conversationId).emit('direct_message_edited', {
   messageId: message.id,
   content: message.content
+});
+
+// Broadcast forwarded message to channel
+io.to(channelId).emit('message_forwarded', {
+  originalMessage: message,
+  targetChannelId: channelId
+});
+
+// Broadcast forwarded message to conversation
+io.to(conversationId).emit('message_forwarded_to_direct', {
+  originalMessage: message,
+  targetConversationId: conversationId
 });
 ```
 
@@ -616,4 +815,32 @@ async function sendMessageWithFile(channelId, content, file) {
 2. **Message Batching**: Consider batching multiple messages for better performance
 3. **Connection Pooling**: Reuse connections when possible
 4. **Error Handling**: Implement proper error handling to prevent connection drops
-5. **Monitoring**: Use the stats endpoint to monitor connection health 
+5. **Monitoring**: Use the stats endpoint to monitor connection health
+
+## Feature Summary
+
+### ✅ Complete WebSocket Features
+
+| Feature | Channel Messages | Direct Messages | Status |
+|---------|------------------|------------------|--------|
+| **Send Messages** | ✅ | ✅ | Complete |
+| **Edit Messages** | ✅ | ✅ | Complete |
+| **Delete Messages** | ✅ | ✅ | Complete |
+| **Forward Messages** | ✅ | ✅ | **Complete** |
+| **Add Reactions** | ✅ | ✅ | Complete |
+| **Remove Reactions** | ✅ | ✅ | Complete |
+| **File Attachments** | ✅ | ✅ | Complete |
+| **Reply to Messages** | ✅ | ✅ | Complete |
+
+### 🔄 Forwarding Capabilities
+
+The WebSocket API now supports **complete cross-platform forwarding**:
+
+- **Channel → Channel**: `forward_message` event
+- **Channel → Direct Message**: `forward_to_direct` event  
+- **Direct Message → Direct Message**: `forward_to_direct` event
+- **Direct Message → Channel**: `forward_message` event
+
+### 📡 Real-time Events
+
+All forwarding operations are broadcast in real-time to all participants in the target channel or conversation, ensuring immediate updates across all connected clients. 

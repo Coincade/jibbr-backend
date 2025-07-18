@@ -83,6 +83,7 @@ model Conversation {
   messages    Message[]
   participants ConversationParticipant[]
   readStatuses ConversationReadStatus[]
+  forwardedMessages ForwardedMessage[]
   
   @@unique([id])
 }
@@ -168,8 +169,10 @@ model ForwardedMessage {
   originalMessage Message @relation(fields: [originalMessageId], references: [id])
   forwardedByUserId String
   forwardedBy User     @relation(fields: [forwardedByUserId], references: [id])
-  channelId   String
-  channel     Channel  @relation(fields: [channelId], references: [id])
+  channelId   String?
+  channel     Channel?  @relation(fields: [channelId], references: [id])
+  conversationId String?
+  conversation   Conversation? @relation(fields: [conversationId], references: [id])
 }
 
 enum Role {

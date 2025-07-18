@@ -1,5 +1,5 @@
 import { Socket, ConversationClientsMap, SendDirectMessageMessage, EditDirectMessageMessage, DeleteDirectMessageMessage, DirectMessageData } from '../types.js';
-import { broadcastToConversation, validateConversationParticipation, getUserInfo } from '../utils.js';
+import { broadcastToConversation, validateConversationParticipation, getUserInfo, validateChannelMembership } from '../utils.js';
 import { sendDirectMessageSchema, updateMessageSchema } from '../../validation/message.validations.js';
 import { ZodError } from 'zod';
 import { NotificationService } from '../../services/notification.service.js';
@@ -433,5 +433,101 @@ export const handleRemoveDirectReaction = async (
   } catch (error) {
     console.error('Error handling remove direct reaction:', error);
     socket.emit('error', { message: error instanceof Error ? error.message : 'Failed to remove reaction' });
+  }
+}; 
+
+/**
+ * Handle forward message to direct conversation event
+ */
+export const handleForwardDirectMessage = async (
+  socket: Socket,
+  data: any,
+  conversationClients: ConversationClientsMap
+): Promise<void> => {
+  try {
+    if (!socket.data.user) {
+      throw new Error('User not authenticated');
+    }
+
+    // Validate conversation participation for target conversation
+    const isTargetParticipant = await validateConversationParticipation(socket.data.user.id, data.targetConversationId);
+    if (!isTargetParticipant) {
+      throw new Error('You are not a participant of the target conversation');
+    }
+
+    // Get original message
+    const { default: prisma } = await import('../../config/database.js');
+    const originalMessage = await prisma.message.findUnique({
+      where: { id: data.messageId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            image: true,
+          },
+        },
+        attachments: true,
+        reactions: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!originalMessage) {
+      throw new Error('Original message not found');
+    }
+
+    // If forwarding from a channel, validate channel membership
+    if (originalMessage.channelId) {
+      const isSourceMember = await validateChannelMembership(socket.data.user.id, originalMessage.channelId);
+      if (!isSourceMember) {
+        throw new Error('You are not a member of the source channel');
+      }
+    } else if (originalMessage.conversationId) {
+      // If forwarding from a direct message, validate conversation participation
+      const isSourceParticipant = await validateConversationParticipation(socket.data.user.id, originalMessage.conversationId);
+      if (!isSourceParticipant) {
+        throw new Error('You are not a participant of the source conversation');
+      }
+    }
+
+    // Create forwarded message record
+    await prisma.forwardedMessage.create({
+      data: {
+        originalMessageId: data.messageId,
+        forwardedByUserId: socket.data.user.id,
+        conversationId: data.targetConversationId,
+      },
+    });
+
+    // Broadcast to target conversation using Socket.IO
+    socket.to(data.targetConversationId).emit('message_forwarded_to_direct', {
+      originalMessage: {
+        ...originalMessage,
+        createdAt: originalMessage.createdAt.toISOString(),
+        updatedAt: originalMessage.updatedAt.toISOString(),
+        reactions: originalMessage.reactions.map(reaction => ({
+          ...reaction,
+          createdAt: reaction.createdAt.toISOString(),
+        })),
+        attachments: originalMessage.attachments.map(attachment => ({
+          ...attachment,
+          createdAt: attachment.createdAt.toISOString(),
+        })),
+      },
+      targetConversationId: data.targetConversationId,
+    });
+
+  } catch (error) {
+    console.error('Error handling forward direct message:', error);
+    socket.emit('error', { message: error instanceof Error ? error.message : 'Failed to forward message to direct conversation' });
   }
 }; 
