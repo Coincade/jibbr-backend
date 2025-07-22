@@ -23,6 +23,7 @@ export const handleSendDirectMessage = async (
       content: data.content,
       conversationId: data.conversationId,
       replyToId: data.replyToId,
+      attachments: data.attachments,
     });
 
     // Validate conversation participation
