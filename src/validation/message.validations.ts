@@ -2,17 +2,43 @@ import { z } from "zod";
 
 // Send message validation
 export const sendMessageSchema = z.object({
-  content: z.string().min(1, "Message content is required").max(2000, "Message too long"),
+  content: z.string().max(2000, "Message too long"),
   channelId: z.string().min(1, "Channel ID is required"),
   replyToId: z.string().optional(), // Optional reply to another message
-});
+  attachments: z.array(z.object({
+    filename: z.string(),
+    originalName: z.string(),
+    mimeType: z.string(),
+    size: z.number(),
+    url: z.string(),
+  })).optional(),
+}).refine(
+  (data) => (data.content && data.content.trim().length > 0) || (data.attachments && data.attachments.length > 0),
+  {
+    message: "Message must have either content or at least one attachment.",
+    path: ["content"],
+  }
+);
 
 // Send direct message validation
 export const sendDirectMessageSchema = z.object({
-  content: z.string().min(1, "Message content is required").max(2000, "Message too long"),
+  content: z.string().max(2000, "Message too long"),
   conversationId: z.string().min(1, "Conversation ID is required"),
   replyToId: z.string().optional(), // Optional reply to another message
-});
+  attachments: z.array(z.object({
+    filename: z.string(),
+    originalName: z.string(),
+    mimeType: z.string(),
+    size: z.number(),
+    url: z.string(),
+  })).optional(),
+}).refine(
+  (data) => (data.content && data.content.trim().length > 0) || (data.attachments && data.attachments.length > 0),
+  {
+    message: "Message must have either content or at least one attachment.",
+    path: ["content"],
+  }
+);
 
 // React to message validation
 export const reactToMessageSchema = z.object({

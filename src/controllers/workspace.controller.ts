@@ -92,6 +92,7 @@ export const getAllWorkspaces = async (req: Request, res: Response) => {
     const workspaces = await prisma.workspace.findMany({
       where: {
         isActive: true,
+        deletedAt: null,
       },
     });
     return res.status(200).json({
@@ -114,10 +115,11 @@ export const getWorkspace = async (req: Request, res: Response) => {
     if (!user) {
       return res.status(422).json({ message: "User not found" });
     }
-    const workspace = await prisma.workspace.findUnique({
+    const workspace = await prisma.workspace.findFirst({
       where: {
         id: req.params.id,
         isActive: true,
+        deletedAt: null,
       },
     });
     return res.status(200).json({
@@ -142,6 +144,7 @@ export const getAllWorkspacesForUser = async (req: Request, res: Response) => {
     const workspaces = await prisma.workspace.findMany({
       where: {
         isActive: true,
+        deletedAt: null,
         OR: [
           { userId: user.id },
           {
@@ -364,7 +367,7 @@ export const updateWorkspace = async (req: Request, res: Response) => {
   }
 };
 
-export const deleteWorkspace = async (req: Request, res: Response) => {
+export const softDeleteWorkspace = async (req: Request, res: Response) => {
   try {
     const user = req.user;
     if (!user) {
@@ -373,26 +376,157 @@ export const deleteWorkspace = async (req: Request, res: Response) => {
 
     const workspaceId = req.params.id;
 
-    const workspace = await prisma.workspace.findUnique({
+    const workspace = await prisma.workspace.findFirst({
       where: {
         id: workspaceId,
         isActive: true,
+        deletedAt: null
       },
     }); 
     if (!workspace) {
       return res.status(422).json({ message: "Workspace not found" });
     }
 
+    // Check if user is the workspace creator or has admin role
+    const member = await prisma.member.findFirst({
+      where: {
+        userId: user.id,
+        workspaceId: workspaceId,
+        isActive: true
+      }
+    });
+
+    const isWorkspaceCreator = workspace.userId === user.id;
+    const isAdmin = member?.role === "ADMIN";
+
+    if (!isWorkspaceCreator && !isAdmin) {
+      return res.status(403).json({ message: "You don't have permission to delete this workspace" });
+    }
+
+    // Soft delete the workspace by setting deletedAt timestamp
     await prisma.workspace.update({
       where: {
         id: workspaceId,
       },
       data: {
-        isActive: false,
+        deletedAt: new Date()
       },
     });   
 
-    return res.status(200).json({ message: "Workspace deleted successfully" });
+    return res.status(200).json({ 
+      message: "Workspace soft deleted successfully. All data is preserved." 
+    });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      const errors = formatError(error);
+      return res.status(422).json({ message: "Invalid data", errors });
+    }
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const hardDeleteWorkspace = async (req: Request, res: Response) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(422).json({ message: "User not found" });
+    }
+
+    const workspaceId = req.params.id;
+    const deletePass = req.body.DELETE_PASS;
+
+    // Check if DELETE_PASS is provided and matches environment variable
+    if (!deletePass || deletePass !== process.env.DELETE_PASS) {
+      return res.status(403).json({ message: "Invalid delete password" });
+    }
+
+    const workspace = await prisma.workspace.findFirst({
+      where: {
+        id: workspaceId,
+        isActive: true,
+        deletedAt: null
+      },
+    }); 
+    if (!workspace) {
+      return res.status(422).json({ message: "Workspace not found" });
+    }
+
+    // Hard delete everything related to the workspace
+    // Delete in order to avoid foreign key constraints
+    
+    // 1. Delete all reactions in messages from all channels in this workspace
+    await prisma.reaction.deleteMany({
+      where: {
+        message: {
+          channel: {
+            workspaceId: workspaceId
+          }
+        }
+      }
+    });
+
+    // 2. Delete all attachments in messages from all channels in this workspace
+    await prisma.attachment.deleteMany({
+      where: {
+        message: {
+          channel: {
+            workspaceId: workspaceId
+          }
+        }
+      }
+    });
+
+    // 3. Delete all forwarded messages from all channels in this workspace
+    await prisma.forwardedMessage.deleteMany({
+      where: {
+        channel: {
+          workspaceId: workspaceId
+        }
+      }
+    });
+
+    // 4. Delete all messages in all channels in this workspace
+    await prisma.message.deleteMany({
+      where: {
+        channel: {
+          workspaceId: workspaceId
+        }
+      }
+    });
+
+    // 5. Delete all channel members from all channels in this workspace
+    await prisma.channelMember.deleteMany({
+      where: {
+        channel: {
+          workspaceId: workspaceId
+        }
+      }
+    });
+
+    // 6. Delete all channels in this workspace
+    await prisma.channel.deleteMany({
+      where: {
+        workspaceId: workspaceId
+      }
+    });
+
+    // 7. Delete all workspace members
+    await prisma.member.deleteMany({
+      where: {
+        workspaceId: workspaceId
+      }
+    });
+
+    // 8. Finally delete the workspace itself
+    await prisma.workspace.delete({
+      where: {
+        id: workspaceId
+      }
+    });
+
+    return res.status(200).json({ 
+      message: "Workspace and all associated data permanently deleted successfully" 
+    });
   } catch (error) {
     if (error instanceof ZodError) {
       const errors = formatError(error);

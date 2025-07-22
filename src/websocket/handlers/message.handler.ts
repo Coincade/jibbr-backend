@@ -23,6 +23,7 @@ export const handleSendMessage = async (
       content: data.content,
       channelId: data.channelId,
       replyToId: data.replyToId,
+      attachments: data.attachments,
     });
 
     // Validate channel membership

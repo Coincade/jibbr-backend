@@ -4,7 +4,7 @@ import { Socket } from 'socket.io';
 import { authenticateSocket, removeClientFromAllChannels, addClientToChannel, removeClientFromAllConversations, addClientToConversation } from './utils.js';
 import { handleSendMessage, handleEditMessage, handleDeleteMessage, handleForwardMessage } from './handlers/message.handler.js';
 import { handleAddReaction, handleRemoveReaction } from './handlers/reaction.handler.js';
-import { handleSendDirectMessage, handleEditDirectMessage, handleDeleteDirectMessage, handleAddDirectReaction, handleRemoveDirectReaction } from './handlers/direct-message.handler.js';
+import { handleSendDirectMessage, handleEditDirectMessage, handleDeleteDirectMessage, handleAddDirectReaction, handleRemoveDirectReaction, handleForwardDirectMessage } from './handlers/direct-message.handler.js';
 
 export class WebSocketService {
   private io: SocketIOServer;
@@ -102,6 +102,10 @@ export class WebSocketService {
 
     socket.on('forward_message', async (data) => {
       await this.handleForwardMessage(socket, data);
+    });
+
+    socket.on('forward_to_direct', async (data) => {
+      await this.handleForwardToDirect(socket, data);
     });
 
     socket.on('add_reaction', async (data) => {
@@ -216,6 +220,15 @@ export class WebSocketService {
     } catch (error) {
       console.error('Error handling forward message:', error);
       socket.emit('error', { message: 'Failed to forward message' });
+    }
+  }
+
+  private async handleForwardToDirect(socket: Socket, data: any): Promise<void> {
+    try {
+      await handleForwardDirectMessage(socket, data, this.conversationClients);
+    } catch (error) {
+      console.error('Error handling forward to direct message:', error);
+      socket.emit('error', { message: 'Failed to forward message to direct conversation' });
     }
   }
 
