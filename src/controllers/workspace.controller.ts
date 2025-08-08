@@ -535,3 +535,77 @@ export const hardDeleteWorkspace = async (req: Request, res: Response) => {
     return res.status(500).json({ message: "Internal server error" });
   }
 };
+
+export const getPublicChannels = async (req: Request, res: Response) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(422).json({ message: "User not found" });
+    }
+
+    const workspaceId = req.params.id;
+
+    // Check if workspace exists and is active
+    const workspace = await prisma.workspace.findFirst({
+      where: {
+        id: workspaceId,
+        isActive: true,
+        deletedAt: null,
+      },
+    });
+
+    if (!workspace) {
+      return res.status(422).json({ message: "Workspace not found" });
+    }
+
+    // Check if user is a member of this workspace
+    const member = await prisma.member.findFirst({
+      where: {
+        userId: user.id,
+        workspaceId: workspaceId,
+        isActive: true,
+      },
+    });
+
+    if (!member) {
+      return res.status(403).json({ message: "You don't have access to this workspace" });
+    }
+
+    // Get all public channels in the workspace
+    const publicChannels = await prisma.channel.findMany({
+      where: {
+        workspaceId: workspaceId,
+        type: "PUBLIC",
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        image: true,
+        createdAt: true,
+        updatedAt: true,
+        _count: {
+          select: {
+            members: true,
+            messages: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    });
+
+    return res.status(200).json({
+      message: "Public channels fetched successfully",
+      data: publicChannels,
+    });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      const errors = formatError(error);
+      return res.status(422).json({ message: "Invalid data", errors });
+    }
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
