@@ -89,6 +89,7 @@ export const login = async (req: Request, res: Response) => {
         },
       });
     }
+    
     //JWT Payload
     const JWTPayload = {
       id: user.id,
@@ -106,6 +107,9 @@ export const login = async (req: Request, res: Response) => {
       data: {
         ...JWTPayload,
         token: `Bearer ${token}`,
+        emailVerified: !!user.email_verified_at,
+        emailVerifiedAt: user.email_verified_at,
+        hasVerificationToken: !!user.email_verify_token,
       },
     });
   } catch (error) {
