@@ -1,5 +1,5 @@
 import express, { RequestHandler } from "express";
-import { login, logout, register, getUser, forgetPassword, resetPassword } from "../controllers/auth.controller.js";
+import { login, logout, register, getUser, forgetPassword, resetPassword, deleteUser } from "../controllers/auth.controller.js";
 import authMiddleware from "../middleware/Auth.middleware.js";
 import { authLimiter } from "../config/rateLimit.js";
 
@@ -16,6 +16,7 @@ router.post("/reset-password", resetPassword as unknown as RequestHandler);
 //Private User Routes
 router.get("/user", authMiddleware as unknown as RequestHandler, getUser as unknown as RequestHandler);
 
-
+// Admin Routes - Delete user (only for admins)
+router.delete("/user/:id", authMiddleware as unknown as RequestHandler, deleteUser as unknown as RequestHandler);
 
 export default router;
