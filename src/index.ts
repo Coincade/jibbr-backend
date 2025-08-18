@@ -2,6 +2,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import dotenv from 'dotenv';
 import path from 'path';
+import http from 'http';
 
 // Setup env first, before other imports
 const __filename = fileURLToPath(import.meta.url);
@@ -30,8 +31,15 @@ import authRoutes from "./routes/auth.route.js";
 import messageRoutes from "./routes/message.route.js";
 import verifyRoutes from "./routes/verify.route.js";
 import workspaceRoutes from "./routes/workspace.route.js";
+import channelRoutes from "./routes/channel.route.js";
+import uploadRoutes from "./routes/upload.route.js";
+import conversationRoutes from "./routes/conversation.route.js";
+import notificationRoutes from "./routes/notification.route.js";
 import { appLimiter } from "./config/rateLimit.js";
+import { WebSocketService } from "./websocket/index.js";
+
 const app: Application = express();
+const server = http.createServer(app);
 
 const PORT = process.env.PORT || 7000;
 
@@ -43,6 +51,10 @@ app.use("/api/auth", authRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/verify", verifyRoutes);
 app.use("/api/workspace", workspaceRoutes);
+app.use("/api/channel", channelRoutes);
+app.use("/api/upload", uploadRoutes);
+app.use("/api/conversations", conversationRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 //Set view engine
 app.set('view engine', 'ejs');
@@ -76,6 +88,15 @@ app.get("/", async(req: Request, res: Response) => {
 import "./jobs/index.js";
 import { emailQueue, emailQueueName } from './jobs/EmailJob.js';
 
-app.listen(PORT, () => {
+// Initialize WebSocket service
+const wsService = new WebSocketService(server);
+
+// Add WebSocket stats endpoint
+app.get("/api/ws/stats", (req: Request, res: Response) => {
+  res.json(wsService.getStats());
+});
+
+server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
+  console.log(`WebSocket server running on ws://localhost:${PORT}`);
 });

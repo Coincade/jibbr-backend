@@ -27,6 +27,16 @@ model User {
   email_verify_token   String?
   workspaces    Workspace[]
   members       Member[]
+  channelMembers ChannelMember[]
+  messages      Message[]
+  reactions     Reaction[]
+  forwardedMessages ForwardedMessage[]
+  // Direct messaging
+  conversations ConversationParticipant[]
+  // Notifications
+  userNotifications UserNotification[]
+  conversationReadStatuses ConversationReadStatus[]
+  notificationPreferences UserNotificationPreference[]
 }
 
 model Workspace {
@@ -37,6 +47,7 @@ model Workspace {
   isActive    Boolean   @default(true)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt @default(now())
+  deletedAt   DateTime?
   userId      String
   user        User      @relation(fields: [userId], references: [id])
   members     Member[]
@@ -53,11 +64,41 @@ model Channel {
   id          String      @id @default(cuid())
   name        String
   type        ChannelType @default(PUBLIC)
+  image       String?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt @default(now())
+  deletedAt   DateTime?
   workspaceId String
   workspace   Workspace   @relation(fields: [workspaceId], references: [id])
   messages    Message[]
+  members     ChannelMember[]
+  forwardedMessages ForwardedMessage[]
+}
+
+// Direct messaging support
+model Conversation {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt @default(now())
+  messages    Message[]
+  participants ConversationParticipant[]
+  readStatuses ConversationReadStatus[]
+  forwardedMessages ForwardedMessage[]
+  
+  @@unique([id])
+}
+
+model ConversationParticipant {
+  id             String       @id @default(cuid())
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt @default(now())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isActive       Boolean      @default(true)
+
+  @@unique([conversationId, userId])
 }
 
 model Message {
@@ -65,8 +106,73 @@ model Message {
   content     String
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt @default(now())
-  channelId   String
-  channel     Channel   @relation(fields: [channelId], references: [id])
+  
+  // Support both channel and direct messages
+  channelId   String?
+  channel     Channel?  @relation(fields: [channelId], references: [id])
+  
+  // Direct message support
+  conversationId String?
+  conversation   Conversation? @relation(fields: [conversationId], references: [id])
+  
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  
+  // Reply functionality
+  replyToId   String?
+  replyTo     Message?  @relation("MessageReplies", fields: [replyToId], references: [id])
+  replies     Message[] @relation("MessageReplies")
+  
+  // Forward functionality
+  forwardedMessages ForwardedMessage[]
+  
+  // Attachments
+  attachments Attachment[]
+  
+  // Reactions
+  reactions   Reaction[]
+  
+  // Soft delete support
+  deletedAt   DateTime?
+  
+
+}
+
+model Attachment {
+  id          String    @id @default(cuid())
+  filename    String
+  originalName String
+  mimeType    String
+  size        Int
+  url         String
+  createdAt   DateTime  @default(now())
+  messageId   String
+  message     Message   @relation(fields: [messageId], references: [id], onDelete: Cascade)
+}
+
+model Reaction {
+  id          String    @id @default(cuid())
+  emoji       String
+  createdAt   DateTime  @default(now())
+  messageId   String
+  message     Message   @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+
+  @@unique([messageId, userId, emoji])
+}
+
+model ForwardedMessage {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  originalMessageId String
+  originalMessage Message @relation(fields: [originalMessageId], references: [id])
+  forwardedByUserId String
+  forwardedBy User     @relation(fields: [forwardedByUserId], references: [id])
+  channelId   String?
+  channel     Channel?  @relation(fields: [channelId], references: [id])
+  conversationId String?
+  conversation   Conversation? @relation(fields: [conversationId], references: [id])
 }
 
 enum Role {
@@ -85,4 +191,74 @@ model Member {
   user        User      @relation(fields: [userId], references: [id])
   role        Role
   isActive    Boolean   @default(true)
+}
+
+model ChannelMember {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt @default(now())
+  channelId   String
+  channel     Channel   @relation(fields: [channelId], references: [id])
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  isActive    Boolean   @default(true)
+  // Notification tracking
+  lastReadAt  DateTime?
+  unreadCount Int       @default(0)
+
+  @@unique([channelId, userId])
+}
+
+// Notification system models
+model UserNotification {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        NotificationType
+  title       String
+  message     String
+  data        Json?     // Additional data like channelId, conversationId, messageId
+  isRead      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  readAt      DateTime?
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+}
+
+enum NotificationType {
+  NEW_MESSAGE
+  MENTION
+  REACTION
+  CHANNEL_INVITE
+  WORKSPACE_INVITE
+  SYSTEM
+}
+
+// Track read status for conversations
+model ConversationReadStatus {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastReadAt     DateTime     @default(now())
+  unreadCount    Int          @default(0)
+
+  @@unique([conversationId, userId])
+  @@index([userId, lastReadAt])
+}
+
+// User notification preferences
+model UserNotificationPreference {
+  id                    String    @id @default(cuid())
+  userId                String    @unique
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailNotifications     Boolean   @default(true)
+  pushNotifications     Boolean   @default(true)
+  desktopNotifications  Boolean   @default(true)
+  soundEnabled          Boolean   @default(true)
+  mentionNotifications  Boolean   @default(true)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt @default(now())
 }
