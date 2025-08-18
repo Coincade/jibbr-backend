@@ -70,8 +70,15 @@ export const uploadToSpaces = async (
   };
 
   try {
-    const result = await s3.upload(params).promise();
-    return result.Location;
+    return new Promise<string>((resolve, reject) => {
+      (s3.upload(params) as any).send((err: any, result: any) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result.Location);
+        }
+      });
+    });
   } catch (error) {
     console.error('Error uploading to Digital Ocean Spaces:', error);
     throw new Error('Failed to upload file');
@@ -95,7 +102,15 @@ export const deleteFromSpaces = async (fileUrl: string): Promise<void> => {
   };
 
   try {
-    await s3.deleteObject(params).promise();
+    return new Promise<void>((resolve, reject) => {
+      s3.deleteObject(params, (err: any) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
   } catch (error) {
     console.error('Error deleting from Digital Ocean Spaces:', error);
     throw new Error('Failed to delete file');
