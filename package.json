@@ -44,6 +44,7 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@types/aws-sdk": "^0.0.42",
     "@types/bcrypt": "^5.0.2",
     "@types/cors": "^2.8.17",
     "@types/ejs": "^3.1.5",

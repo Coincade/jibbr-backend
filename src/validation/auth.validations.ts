@@ -21,8 +21,8 @@ export const forgetPasswordSchema = z.object({
 
 export const resetPasswordSchema = z.object({
     email: z.string({message: "Email is required"}).email({message: "Invalid email address"}),
-    token: z.string({message: "Token is required"}),
-    password: z.string({message: "Password is required"}).min(8, {message: "Password must be at least 8 characters long"}),
+    currentPassword: z.string({message: "Current password is required"}).min(8, {message: "Current password must be at least 8 characters long"}),
+    password: z.string({message: "New password is required"}).min(8, {message: "New password must be at least 8 characters long"}),
     confirmPassword: z.string({message: "Confirm password is required"}).min(8, {message: "Confirm password must be at least 8 characters long"}),
 }).refine((data) => data.password === data.confirmPassword, {
     path: ["confirmPassword"],
