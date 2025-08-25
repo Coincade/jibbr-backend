@@ -182,7 +182,7 @@ export const forgetPassword = async (req: Request, res: Response) => {
     },
     where:{ email: payload.email}
    })
-   const url = `${process.env.CLIENT_APP_URL}/reset-password?email=${payload.email}&token=${token}`;
+   const url = `${process.env.CLIENT_APP_URL}/forget-reset-password?email=${payload.email}&token=${token}`;
 
    const html = await renderEmailEjs("forget-password", {
     url,
