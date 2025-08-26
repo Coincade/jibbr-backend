@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { forgetPasswordSchema, loginSchema, registerSchema, resetPasswordSchema } from "../validation/auth.validations.js";
+import { forgetPasswordSchema, forgetResetPasswordSchema, loginSchema, registerSchema, resetPasswordSchema } from "../validation/auth.validations.js";
 import { ZodError } from "zod";
 import { checkDateHourDiff, formatError, renderEmailEjs } from "../helper.js";
 import prisma from "../config/database.js";
@@ -204,6 +204,55 @@ export const forgetPassword = async (req: Request, res: Response) => {
     return res.status(500).json({ message: "Internal server error" });
   }
 };
+
+export const forgetResetPassword = async (req: Request, res: Response) => {
+  try{
+    const body = req.body;
+    const payload = forgetResetPasswordSchema.parse(body);
+
+    const user = await prisma.user.findUnique({where: { email: payload.email }})
+
+    if(!user || user === null) {
+      return res.status(422).json({message: "User not found", errors: {email: "User not found with this email"}})
+    }
+
+    //Check token
+    if(user.password_reset_token !== payload.token) {
+      return res.status(422).json({message: "User not found", errors: {email: "Token is invalid"}})
+    }
+
+    //Check token expiration for 2 hrs time frame
+    const hoursDiff = checkDateHourDiff(user.token_send_at!);
+    if(hoursDiff > 2) {
+      return res.status(422).json({message: "Token expired", errors: {email: "Token expired"}})
+    }
+
+    //Update password
+    const salt = await bcrypt.genSalt(10);
+    const newPass = await bcrypt.hash(payload.password, salt); 
+
+    await prisma.user.update({
+      data: {
+        password: newPass,
+        password_reset_token: null,
+        token_send_at: null,
+      },
+      where: { email: payload.email },
+    });
+
+    return res.status(200).json({message: "Password reset successfully"})
+    
+    
+  }
+  catch (error) {
+    // console.log("Error in resetPassword controller:", error);
+    if (error instanceof ZodError) {
+      const errors = formatError(error);
+      res.status(422).json({ message: "Invalid data", errors });
+    }
+    return res.status(500).json({ message: "Internal server error" });
+  }
+}
 
 export const resetPassword = async (req: Request, res: Response) => {
   try {
