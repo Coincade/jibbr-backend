@@ -55,6 +55,7 @@ export const createChannel = async (req: Request, res: Response) => {
         type: payload.type,
         workspaceId: payload.workspaceId,
         image: payload.image,
+        channelAdminId: user.id,
         members: {
           create: {
             userId: user.id
@@ -400,7 +401,7 @@ export const updateChannel = async (req: Request, res: Response) => {
     // Check if user has permission to update the channel
     // Only workspace admin, moderator, or channel creator can update
     const isWorkspaceAdmin = member.role === "ADMIN" || member.role === "MODERATOR";
-    const isChannelCreator = channel.workspace.userId === user.id;
+    const isChannelCreator = channel.channelAdminId === user.id;
 
     if (!isWorkspaceAdmin && !isChannelCreator) {
       return res.status(403).json({ message: "You don't have permission to update this channel" });
@@ -472,7 +473,7 @@ export const softDeleteChannel = async (req: Request, res: Response) => {
     // Check if user has permission to delete the channel
     // Only workspace admin, moderator, or channel creator can delete
     const isWorkspaceAdmin = member.role === "ADMIN" || member.role === "MODERATOR";
-    const isChannelCreator = channel.workspace.userId === user.id;
+    const isChannelCreator = channel.channelAdminId === user.id;
 
     if (!isWorkspaceAdmin && !isChannelCreator) {
       return res.status(403).json({ message: "You don't have permission to delete this channel" });

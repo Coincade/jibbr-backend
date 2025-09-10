@@ -40,6 +40,7 @@ export const createWorkspace = async (req: Request, res: Response) => {
         name: "General",
         workspaceId: workspace.id,
         type: "PUBLIC",
+        channelAdminId: user.id,
       },
     });
 
@@ -49,6 +50,7 @@ export const createWorkspace = async (req: Request, res: Response) => {
         name: "TownHall",
         workspaceId: workspace.id,
         type: "ANNOUNCEMENT",
+        channelAdminId: user.id,
       },
     });
 

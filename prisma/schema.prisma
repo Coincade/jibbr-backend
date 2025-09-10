@@ -28,6 +28,7 @@ model User {
   workspaces    Workspace[]
   members       Member[]
   channelMembers ChannelMember[]
+  channels      Channel[]
   messages      Message[]
   reactions     Reaction[]
   forwardedMessages ForwardedMessage[]
@@ -70,6 +71,8 @@ model Channel {
   deletedAt   DateTime?
   workspaceId String
   workspace   Workspace   @relation(fields: [workspaceId], references: [id])
+  channelAdminId String
+  channelAdmin User       @relation(fields: [channelAdminId], references: [id])
   messages    Message[]
   members     ChannelMember[]
   forwardedMessages ForwardedMessage[]
