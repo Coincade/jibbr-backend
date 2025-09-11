@@ -144,8 +144,17 @@ export const getChannel = async (req: Request, res: Response) => {
         workspace: true,
         members: {
           where: {
-            userId: user.id,
             isActive: true
+          },
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                image: true,
+                email: true
+              }
+            }
           }
         }
       }
@@ -169,7 +178,8 @@ export const getChannel = async (req: Request, res: Response) => {
     }
 
     // Check if user is a member of the channel
-    if (channel.members.length === 0) {
+    const userChannelMembership = channel.members.find(member => member.userId === user.id);
+    if (!userChannelMembership) {
       return res.status(403).json({ message: "You are not a member of this channel" });
     }
 
