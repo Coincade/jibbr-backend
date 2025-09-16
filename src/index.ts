@@ -35,6 +35,7 @@ import channelRoutes from "./routes/channel.route.js";
 import uploadRoutes from "./routes/upload.route.js";
 import conversationRoutes from "./routes/conversation.route.js";
 import notificationRoutes from "./routes/notification.route.js";
+import presenceRoutes from "./routes/presence.route.js";
 import { appLimiter } from "./config/rateLimit.js";
 import { initializeWebSocketService, getWebSocketStats } from "./websocket/index.js";
 
@@ -55,6 +56,7 @@ app.use("/api/channel", channelRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/conversations", conversationRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/presence", presenceRoutes);
 
 //Set view engine
 app.set('view engine', 'ejs');

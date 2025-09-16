@@ -10,6 +10,8 @@ import { handleSendDirectMessage, handleEditDirectMessage, handleDeleteDirectMes
 let io: SocketIOServer;
 const channelClients: Map<string, Set<Socket>> = new Map();
 const conversationClients: Map<string, Set<Socket>> = new Map();
+const onlineUsers: Map<string, Set<Socket>> = new Map(); // userId -> Set of sockets
+const userSockets: Map<string, string> = new Map(); // socketId -> userId
 
 // Initialize WebSocket service
 export const initializeWebSocketService = (server: Server): SocketIOServer => {
@@ -81,6 +83,13 @@ const handleConnection = (socket: Socket): void => {
 
   // Join user's personal room for direct messaging
   socket.join(`user_${user.id}`);
+
+  // Track user as online
+  addUserToOnlineList(user.id, socket);
+  userSockets.set(socket.id, user.id);
+
+  // Broadcast user online status to all connected users
+  broadcastUserOnlineStatus(user.id, true);
 
   // Send authentication success event
   socket.emit('authenticated', {
@@ -309,6 +318,18 @@ const handleDisconnection = (socket: Socket): void => {
   const user = socket.data.user;
   if (user) {
     console.log(`User ${user.name} disconnected`);
+    
+    // Remove user from online tracking
+    removeUserFromOnlineList(user.id, socket);
+    userSockets.delete(socket.id);
+    
+    // Check if user is still online (has other connections)
+    const isStillOnline = onlineUsers.has(user.id) && onlineUsers.get(user.id)!.size > 0;
+    
+    // If user is completely offline, broadcast offline status
+    if (!isStillOnline) {
+      broadcastUserOnlineStatus(user.id, false);
+    }
   }
 
   // Remove from all channels and conversations
@@ -339,6 +360,60 @@ export const getWebSocketStats = (): { totalConnections: number; channelStats: R
 
 export const broadcastToChannel = (channelId: string, event: string, data: any): void => {
   io.to(channelId).emit(event, data);
+};
+
+// Online status management functions
+const addUserToOnlineList = (userId: string, socket: Socket): void => {
+  if (!onlineUsers.has(userId)) {
+    onlineUsers.set(userId, new Set());
+  }
+  onlineUsers.get(userId)!.add(socket);
+};
+
+const removeUserFromOnlineList = (userId: string, socket: Socket): void => {
+  if (onlineUsers.has(userId)) {
+    onlineUsers.get(userId)!.delete(socket);
+    if (onlineUsers.get(userId)!.size === 0) {
+      onlineUsers.delete(userId);
+    }
+  }
+};
+
+const broadcastUserOnlineStatus = (userId: string, isOnline: boolean): void => {
+  const statusData = {
+    userId,
+    isOnline,
+    timestamp: new Date().toISOString()
+  };
+  
+  // Broadcast to all connected users
+  io.emit('user_status_change', statusData);
+  
+  console.log(`User ${userId} is now ${isOnline ? 'online' : 'offline'}`);
+};
+
+// Get online users
+export const getOnlineUsers = (): string[] => {
+  return Array.from(onlineUsers.keys());
+};
+
+// Check if user is online
+export const isUserOnline = (userId: string): boolean => {
+  return onlineUsers.has(userId) && onlineUsers.get(userId)!.size > 0;
+};
+
+// Get online status for multiple users
+export const getUsersOnlineStatus = (userIds: string[]): Record<string, boolean> => {
+  const status: Record<string, boolean> = {};
+  userIds.forEach(userId => {
+    status[userId] = isUserOnline(userId);
+  });
+  return status;
+};
+
+// Get online users count
+export const getOnlineUsersCount = (): number => {
+  return onlineUsers.size;
 };
 
 export const broadcastToConversation = (conversationId: string, event: string, data: any): void => {

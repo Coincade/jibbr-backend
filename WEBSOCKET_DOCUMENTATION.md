@@ -309,11 +309,277 @@ socket.on('pong', (data) => {
 });
 ```
 
-##### 7. Error
+##### 7. User Status Change (Online/Offline)
+```javascript
+socket.on('user_status_change', (data) => {
+  console.log('User status changed:', data);
+  // data = { userId: "user_123", isOnline: true, timestamp: "2024-01-01T00:00:00.000Z" }
+});
+```
+
+##### 8. Error
 ```javascript
 socket.on('error', (data) => {
   console.error('Socket error:', data);
 });
+```
+
+## Online Status & Presence
+
+### Overview
+The WebSocket API provides real-time online status tracking and presence functionality. Users can see when others come online or go offline, and query the current online status of users.
+
+### Online Status Events
+
+#### User Status Change
+When a user connects or disconnects, all connected users receive a `user_status_change` event:
+
+```javascript
+socket.on('user_status_change', (data) => {
+  console.log('User status changed:', data);
+  // Update UI to show user online/offline status
+  updateUserStatus(data.userId, data.isOnline);
+});
+
+// Data structure:
+// {
+//   userId: "user_123",
+//   isOnline: true,
+//   timestamp: "2024-01-01T00:00:00.000Z"
+// }
+```
+
+### REST API for Online Status
+
+#### Get All Online Users
+```javascript
+// GET /api/presence/online
+const response = await fetch('/api/presence/online', {
+  headers: { 'Authorization': `Bearer ${token}` }
+});
+const data = await response.json();
+// data = { onlineUsers: ["user1", "user2"], count: 2 }
+```
+
+#### Check Specific User Status
+```javascript
+// GET /api/presence/online/:userId
+const response = await fetch(`/api/presence/online/${userId}`, {
+  headers: { 'Authorization': `Bearer ${token}` }
+});
+const data = await response.json();
+// data = { userId: "user_123", isOnline: true }
+```
+
+#### Check Multiple Users Status
+```javascript
+// POST /api/presence/online/check-multiple
+const response = await fetch('/api/presence/online/check-multiple', {
+  method: 'POST',
+  headers: { 
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({ userIds: ["user1", "user2", "user3"] })
+});
+const data = await response.json();
+// data = { "user1": true, "user2": false, "user3": true }
+```
+
+#### Get Online Statistics
+```javascript
+// GET /api/presence/stats
+const response = await fetch('/api/presence/stats', {
+  headers: { 'Authorization': `Bearer ${token}` }
+});
+const data = await response.json();
+// data = { onlineUsersCount: 15 }
+```
+
+### Frontend Implementation Example
+
+```javascript
+// Global state for online users
+let onlineUsers = new Set();
+
+// Setup presence management
+function setupPresenceManager(socket) {
+  // Listen for user status changes
+  socket.on('user_status_change', (data) => {
+    if (data.isOnline) {
+      onlineUsers.add(data.userId);
+    } else {
+      onlineUsers.delete(data.userId);
+    }
+    updateUI();
+  });
+}
+
+// Check if user is online
+function isUserOnline(userId) {
+  return onlineUsers.has(userId);
+}
+
+// Get all online users
+function getOnlineUsers() {
+  return Array.from(onlineUsers);
+}
+
+// Update UI with online status
+function updateUI() {
+  // Update your UI to show online indicators
+  document.querySelectorAll('[data-user-id]').forEach(element => {
+    const userId = element.dataset.userId;
+    const isOnline = isUserOnline(userId);
+    element.classList.toggle('online', isOnline);
+    element.classList.toggle('offline', !isOnline);
+  });
+}
+
+// Load initial online status
+async function loadInitialStatus(token) {
+  try {
+    const response = await fetch('/api/presence/online', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await response.json();
+    onlineUsers = new Set(data.onlineUsers);
+    updateUI();
+  } catch (error) {
+    console.error('Failed to load online status:', error);
+  }
+}
+
+// Usage
+setupPresenceManager(socket);
+await loadInitialStatus(token);
+```
+
+### React Hook Example
+
+```javascript
+import { useState, useEffect } from 'react';
+
+function usePresence(socket, token) {
+  const [onlineUsers, setOnlineUsers] = useState(new Set());
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleStatusChange = (data) => {
+      setOnlineUsers(prev => {
+        const newSet = new Set(prev);
+        if (data.isOnline) {
+          newSet.add(data.userId);
+        } else {
+          newSet.delete(data.userId);
+        }
+        return newSet;
+      });
+    };
+
+    socket.on('user_status_change', handleStatusChange);
+
+    // Load initial status
+    const loadInitialStatus = async () => {
+      try {
+        const response = await fetch('/api/presence/online', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        setOnlineUsers(new Set(data.onlineUsers));
+      } catch (error) {
+        console.error('Failed to load online status:', error);
+      }
+    };
+
+    loadInitialStatus();
+
+    return () => {
+      socket.off('user_status_change', handleStatusChange);
+    };
+  }, [socket, token]);
+
+  const isUserOnline = (userId) => onlineUsers.has(userId);
+  const getOnlineUsers = () => Array.from(onlineUsers);
+
+  return { onlineUsers, isUserOnline, getOnlineUsers };
+}
+
+// Usage in component
+function UserList({ socket, token }) {
+  const { onlineUsers, isUserOnline } = usePresence(socket, token);
+
+  return (
+    <div>
+      {users.map(user => (
+        <div key={user.id} className={isUserOnline(user.id) ? 'online' : 'offline'}>
+          {user.name}
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+### Vue.js Composition API Example
+
+```javascript
+import { ref, onMounted, onUnmounted } from 'vue';
+
+export function usePresence(socket, token) {
+  const onlineUsers = ref(new Set());
+
+  const handleStatusChange = (data) => {
+    if (data.isOnline) {
+      onlineUsers.value.add(data.userId);
+    } else {
+      onlineUsers.value.delete(data.userId);
+    }
+  };
+
+  const isUserOnline = (userId) => onlineUsers.value.has(userId);
+  const getOnlineUsers = () => Array.from(onlineUsers.value);
+
+  const loadInitialStatus = async () => {
+    try {
+      const response = await fetch('/api/presence/online', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+      onlineUsers.value = new Set(data.onlineUsers);
+    } catch (error) {
+      console.error('Failed to load online status:', error);
+    }
+  };
+
+  onMounted(() => {
+    if (socket) {
+      socket.on('user_status_change', handleStatusChange);
+      loadInitialStatus();
+    }
+  });
+
+  onUnmounted(() => {
+    if (socket) {
+      socket.off('user_status_change', handleStatusChange);
+    }
+  });
+
+  return { onlineUsers, isUserOnline, getOnlineUsers };
+}
+
+// Usage in component
+export default {
+  setup() {
+    const { onlineUsers, isUserOnline } = usePresence(socket, token);
+    
+    return {
+      onlineUsers,
+      isUserOnline
+    };
+  }
+};
 ```
 
 ## Forwarding Functionality
