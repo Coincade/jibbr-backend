@@ -44,7 +44,10 @@ const server = http.createServer(app);
 
 const PORT = process.env.PORT || 7000;
 
-app.use(cors());
+app.use(cors({
+  origin: "*", // Allow all origins for Electron app
+  credentials: false
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 

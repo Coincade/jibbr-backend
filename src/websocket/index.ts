@@ -8,6 +8,7 @@ import { authenticateSocket, removeClientFromAllChannels, addClientToChannel, re
 import { handleSendMessage, handleEditMessage, handleDeleteMessage, handleForwardMessage } from './handlers/message.handler.js';
 import { handleAddReaction, handleRemoveReaction } from './handlers/reaction.handler.js';
 import { handleSendDirectMessage, handleEditDirectMessage, handleDeleteDirectMessage, handleAddDirectReaction, handleRemoveDirectReaction, handleForwardDirectMessage } from './handlers/direct-message.handler.js';
+import { handleHuddleEvents } from './handlers/huddle.handler.js';
 
 // Global state for managing socket connections
 let io: SocketIOServer;
@@ -22,9 +23,9 @@ export const initializeWebSocketService = async (server: Server): Promise<Socket
   
   io = new SocketIOServer(server, {
     cors: {
-      origin: process.env.FRONTEND_URL || "http://localhost:5173",
+      origin: "*", // Allow all origins for Electron app
       methods: ["GET", "POST"],
-      credentials: true
+      credentials: false
     },
     
     // 🚀 PERFORMANCE OPTIMIZATIONS
@@ -218,6 +219,9 @@ const handleConnection = (socket: Socket): void => {
   socket.on('ping', () => {
     socket.emit('pong', { timestamp: Date.now() });
   });
+
+  // Handle huddle events
+  handleHuddleEvents(socket);
 
   // Handle disconnection
   socket.on('disconnect', (reason) => {
