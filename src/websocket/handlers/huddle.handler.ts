@@ -1,5 +1,18 @@
 import { Socket } from 'socket.io';
 
+// WebRTC types for signaling
+interface RTCSessionDescriptionInit {
+  type: 'offer' | 'answer' | 'pranswer' | 'rollback';
+  sdp?: string;
+}
+
+interface RTCIceCandidateInit {
+  candidate?: string;
+  sdpMLineIndex?: number | null;
+  sdpMid?: string | null;
+  usernameFragment?: string | null;
+}
+
 export interface HuddleParticipant {
   userId: string;
   socketId: string;
@@ -22,6 +35,26 @@ export interface HuddleRoom {
 
 // Store active huddles
 const activeHuddles = new Map<string, HuddleRoom>();
+
+// ICE Server Configuration for WebRTC
+const getICEServers = () => {
+  const iceServers: Array<{ urls: string; username?: string; credential?: string }> = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' }
+  ];
+
+  // Add TURN servers if configured
+  if (process.env.TURN_SERVER_URL && process.env.TURN_USERNAME && process.env.TURN_PASSWORD) {
+    iceServers.push({
+      urls: process.env.TURN_SERVER_URL,
+      username: process.env.TURN_USERNAME,
+      credential: process.env.TURN_PASSWORD
+    });
+  }
+
+  return iceServers;
+};
 
 export const handleHuddleEvents = (socket: Socket) => {
   // Create a new huddle
@@ -288,6 +321,171 @@ export const handleHuddleEvents = (socket: Socket) => {
     console.log(`🎙️ User ${participant.name} ${isVideoEnabled ? 'enabled' : 'disabled'} video in huddle: ${huddleId}`);
   });
 
+  // Start Call - Slack-like call initiation
+  socket.on('start-call', async (data: { roomId: string; type: 'audio' | 'video'; from: string; participants: string[] }) => {
+    try {
+      if (!socket.data.user?.id) {
+        socket.emit('call-error', { message: 'Authentication required' });
+        return;
+      }
+
+      const { roomId, type, from, participants } = data;
+      
+      // Notify all participants about incoming call
+      participants.forEach(participantId => {
+        socket.to(`user_${participantId}`).emit('incoming-call', {
+          roomId,
+          type,
+          from: socket.data.user?.name || 'Unknown',
+          fromId: socket.data.user.id,
+          timestamp: new Date().toISOString()
+        });
+      });
+
+      console.log(`📞 Call started by ${socket.data.user.name} in room ${roomId} (${type})`);
+    } catch (error) {
+      console.error('Error starting call:', error);
+      socket.emit('call-error', { message: 'Failed to start call' });
+    }
+  });
+
+  // Answer Call - Accept or decline incoming call
+  socket.on('answer-call', async (data: { roomId: string; from: string; accept: boolean; type: 'audio' | 'video' }) => {
+    try {
+      if (!socket.data.user?.id) {
+        socket.emit('call-error', { message: 'Authentication required' });
+        return;
+      }
+
+      const { roomId, from, accept, type } = data;
+      
+      if (accept) {
+        // Join the call room
+        await socket.join(roomId);
+        
+        // Notify caller and other participants
+        socket.to(roomId).emit('user-joined', {
+          userId: socket.data.user.id,
+          name: socket.data.user?.name || 'Unknown',
+          type,
+          timestamp: new Date().toISOString()
+        });
+
+        console.log(`📞 Call accepted by ${socket.data.user.name} in room ${roomId}`);
+      } else {
+        // Notify caller about decline
+        socket.to(`user_${from}`).emit('user-declined', {
+          userId: socket.data.user.id,
+          name: socket.data.user?.name || 'Unknown',
+          timestamp: new Date().toISOString()
+        });
+
+        console.log(`📞 Call declined by ${socket.data.user.name} in room ${roomId}`);
+      }
+    } catch (error) {
+      console.error('Error answering call:', error);
+      socket.emit('call-error', { message: 'Failed to answer call' });
+    }
+  });
+
+  // WebRTC Signaling Events
+  socket.on('offer', async (data: { roomId: string; offer: RTCSessionDescriptionInit; from: string }) => {
+    try {
+      if (!socket.data.user?.id) {
+        socket.emit('call-error', { message: 'Authentication required' });
+        return;
+      }
+
+      const { roomId, offer, from } = data;
+      
+      // Forward offer to all participants in the room except sender
+      socket.to(roomId).emit('offer', {
+        offer,
+        from: socket.data.user.id,
+        fromName: socket.data.user?.name || 'Unknown',
+        roomId
+      });
+
+      console.log(`📡 WebRTC offer sent from ${socket.data.user.name} in room ${roomId}`);
+    } catch (error) {
+      console.error('Error handling WebRTC offer:', error);
+      socket.emit('call-error', { message: 'Failed to send WebRTC offer' });
+    }
+  });
+
+  socket.on('answer', async (data: { roomId: string; answer: RTCSessionDescriptionInit; from: string }) => {
+    try {
+      if (!socket.data.user?.id) {
+        socket.emit('call-error', { message: 'Authentication required' });
+        return;
+      }
+
+      const { roomId, answer, from } = data;
+      
+      // Forward answer to all participants in the room except sender
+      socket.to(roomId).emit('answer', {
+        answer,
+        from: socket.data.user.id,
+        fromName: socket.data.user?.name || 'Unknown',
+        roomId
+      });
+
+      console.log(`📡 WebRTC answer sent from ${socket.data.user.name} in room ${roomId}`);
+    } catch (error) {
+      console.error('Error handling WebRTC answer:', error);
+      socket.emit('call-error', { message: 'Failed to send WebRTC answer' });
+    }
+  });
+
+  socket.on('candidate', async (data: { roomId: string; candidate: RTCIceCandidateInit; from: string }) => {
+    try {
+      if (!socket.data.user?.id) {
+        socket.emit('call-error', { message: 'Authentication required' });
+        return;
+      }
+
+      const { roomId, candidate, from } = data;
+      
+      // Forward ICE candidate to all participants in the room except sender
+      socket.to(roomId).emit('candidate', {
+        candidate,
+        from: socket.data.user.id,
+        fromName: socket.data.user?.name || 'Unknown',
+        roomId
+      });
+
+      console.log(`🧊 ICE candidate sent from ${socket.data.user.name} in room ${roomId}`);
+    } catch (error) {
+      console.error('Error handling ICE candidate:', error);
+      socket.emit('call-error', { message: 'Failed to send ICE candidate' });
+    }
+  });
+
+  // Leave Call
+  socket.on('leave-call', async (data: { roomId: string }) => {
+    try {
+      const { roomId } = data;
+      
+      // Leave the call room
+      await socket.leave(roomId);
+      
+      // Notify other participants
+      socket.to(roomId).emit('user-left', {
+        userId: socket.data.user?.id,
+        name: socket.data.user?.name || 'Unknown',
+        timestamp: new Date().toISOString()
+      });
+
+      console.log(`📞 User ${socket.data.user?.name} left call in room ${roomId}`);
+    } catch (error) {
+      console.error('Error leaving call:', error);
+    }
+  });
+
+  // Get ICE server configuration
+  socket.on('get-ice-servers', () => {
+    socket.emit('ice-servers', { iceServers: getICEServers() });
+  });
 
   // Get active huddles for a channel
   socket.on('get_active_huddles', (data: { channelId: string }) => {
