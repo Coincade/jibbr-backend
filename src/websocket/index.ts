@@ -1,6 +1,9 @@
 import { Server as SocketIOServer } from 'socket.io';
 import { Server } from 'http';
 import { Socket } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
+import { createRedisClients } from '../config/redis.js';
+import { checkMessageRateLimit } from '../services/rate-limiter.js';
 import { authenticateSocket, removeClientFromAllChannels, addClientToChannel, removeClientFromAllConversations, addClientToConversation } from './utils.js';
 import { handleSendMessage, handleEditMessage, handleDeleteMessage, handleForwardMessage } from './handlers/message.handler.js';
 import { handleAddReaction, handleRemoveReaction } from './handlers/reaction.handler.js';
@@ -14,19 +17,49 @@ const onlineUsers: Map<string, Set<Socket>> = new Map(); // userId -> Set of soc
 const userSockets: Map<string, string> = new Map(); // socketId -> userId
 
 // Initialize WebSocket service
-export const initializeWebSocketService = (server: Server): SocketIOServer => {
+export const initializeWebSocketService = async (server: Server): Promise<SocketIOServer> => {
+  const isProduction = process.env.NODE_ENV === 'production';
+  
   io = new SocketIOServer(server, {
     cors: {
       origin: process.env.FRONTEND_URL || "http://localhost:5173",
-      methods: ["GET", "POST"]
+      methods: ["GET", "POST"],
+      credentials: true
     },
-    // Allow all namespaces
-    allowEIO3: true,
-    // Better error handling
-    connectTimeout: 45000,
-    // Enable debugging
-    transports: ['websocket', 'polling']
+    
+    // 🚀 PERFORMANCE OPTIMIZATIONS
+    transports: isProduction ? ['websocket'] : ['websocket', 'polling'],
+    allowUpgrades: !isProduction,
+    
+    // Compression for large messages
+    perMessageDeflate: {
+      threshold: 1024 // Only compress messages > 1KB
+    },
+    
+    // Connection settings
+    connectTimeout: 10000,
+    pingInterval: 25000,
+    pingTimeout: 20000,
+    
+    // Limit max message size
+    maxHttpBufferSize: 1e6, // 1MB
+    
+    // Connection state recovery (survive brief disconnects)
+    connectionStateRecovery: {
+      maxDisconnectionDuration: 2 * 60 * 1000, // 2 minutes
+      skipMiddlewares: true,
+    }
   });
+
+  // 🔥 REDIS ADAPTER - Enable horizontal scaling
+  try {
+    const { pubClient, subClient } = await createRedisClients();
+    io.adapter(createAdapter(pubClient, subClient));
+    console.log('🚀 Redis adapter enabled - Horizontal scaling ready!');
+  } catch (error) {
+    console.error('❌ Redis adapter failed, using in-memory adapter:', error);
+    console.warn('⚠️  Running in single-server mode. Horizontal scaling disabled.');
+  }
   
   setupEventHandlers();
   return io;
@@ -202,6 +235,12 @@ const handleConnection = (socket: Socket): void => {
 // Event handler functions for channel messages
 const handleSendMessageEvent = async (socket: Socket, data: any): Promise<void> => {
   try {
+    // Rate limiting: Max 60 messages per minute
+    if (!checkMessageRateLimit(socket.data.user.id, 60, 60000)) {
+      socket.emit('error', { message: 'Rate limit exceeded. Please slow down.' });
+      return;
+    }
+
     // Automatically add client to channel when sending message
     addClientToChannel(socket, data.channelId, channelClients);
     await handleSendMessage(socket, data, channelClients, io);
@@ -268,6 +307,12 @@ const handleRemoveReactionEvent = async (socket: Socket, data: any): Promise<voi
 // Event handler functions for direct messages
 const handleSendDirectMessageEvent = async (socket: Socket, data: any): Promise<void> => {
   try {
+    // Rate limiting: Max 60 messages per minute
+    if (!checkMessageRateLimit(socket.data.user.id, 60, 60000)) {
+      socket.emit('error', { message: 'Rate limit exceeded. Please slow down.' });
+      return;
+    }
+
     // Automatically add client to conversation when sending message
     addClientToConversation(socket, data.conversationId, conversationClients);
     await handleSendDirectMessage(socket, data, conversationClients, io);

@@ -90,15 +90,31 @@ app.get("/", async(req: Request, res: Response) => {
 import "./jobs/index.js";
 import { emailQueue, emailQueueName } from './jobs/EmailJob.js';
 
-// Initialize WebSocket service
-initializeWebSocketService(server);
+// Add health check endpoint
+app.get("/health", (req: Request, res: Response) => {
+  res.json({ 
+    status: 'healthy',
+    uptime: process.uptime(),
+    memory: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + 'MB'
+  });
+});
 
 // Add WebSocket stats endpoint
 app.get("/api/ws/stats", (req: Request, res: Response) => {
   res.json(getWebSocketStats());
 });
 
-server.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-  console.log(`WebSocket server running on ws://localhost:${PORT}`);
-});
+// Initialize WebSocket service and start server
+(async () => {
+  try {
+    await initializeWebSocketService(server);
+    
+    server.listen(PORT, () => {
+      console.log(`🚀 Server is running on port ${PORT}`);
+      console.log(`🔌 WebSocket server running on ws://localhost:${PORT}`);
+    });
+  } catch (error) {
+    console.error('❌ Failed to initialize server:', error);
+    process.exit(1);
+  }
+})();
