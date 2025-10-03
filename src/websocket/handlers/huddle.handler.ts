@@ -366,8 +366,8 @@ export const handleHuddleEvents = (socket: Socket, io: any) => {
         // Join the call room
         await socket.join(roomId);
         
-        // Notify all participants in the room about the new participant
-        io.to(roomId).emit('user-joined', {
+        // Notify other participants in the room (exclude the joining user)
+        socket.to(roomId).emit('user-joined', {
           userId: socket.data.user.id,
           name: socket.data.user?.name || 'Unknown',
           type,
