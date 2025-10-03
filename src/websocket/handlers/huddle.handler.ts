@@ -389,72 +389,102 @@ export const handleHuddleEvents = (socket: Socket) => {
   });
 
   // WebRTC Signaling Events
-  socket.on('offer', async (data: { roomId: string; offer: RTCSessionDescriptionInit; from: string }) => {
+  socket.on('offer', async (data: { roomId: string; offer: RTCSessionDescriptionInit; from: string; targetUserId?: string }) => {
     try {
       if (!socket.data.user?.id) {
         socket.emit('call-error', { message: 'Authentication required' });
         return;
       }
 
-      const { roomId, offer, from } = data;
+      const { roomId, offer, from, targetUserId } = data;
       
-      // Forward offer to all participants in the room except sender
-      socket.to(roomId).emit('offer', {
-        offer,
-        from: socket.data.user.id,
-        fromName: socket.data.user?.name || 'Unknown',
-        roomId
-      });
-
-      console.log(`📡 WebRTC offer sent from ${socket.data.user.name} in room ${roomId}`);
+      if (targetUserId) {
+        // Send offer to specific user
+        socket.to(`user_${targetUserId}`).emit('offer', {
+          offer,
+          from: socket.data.user.id,
+          fromName: socket.data.user?.name || 'Unknown',
+          roomId
+        });
+        console.log(`📡 WebRTC offer sent from ${socket.data.user.name} to user ${targetUserId} in room ${roomId}`);
+      } else {
+        // Forward offer to all participants in the room except sender
+        socket.to(roomId).emit('offer', {
+          offer,
+          from: socket.data.user.id,
+          fromName: socket.data.user?.name || 'Unknown',
+          roomId
+        });
+        console.log(`📡 WebRTC offer sent from ${socket.data.user.name} to all participants in room ${roomId}`);
+      }
     } catch (error) {
       console.error('Error handling WebRTC offer:', error);
       socket.emit('call-error', { message: 'Failed to send WebRTC offer' });
     }
   });
 
-  socket.on('answer', async (data: { roomId: string; answer: RTCSessionDescriptionInit; from: string }) => {
+  socket.on('answer', async (data: { roomId: string; answer: RTCSessionDescriptionInit; from: string; targetUserId?: string }) => {
     try {
       if (!socket.data.user?.id) {
         socket.emit('call-error', { message: 'Authentication required' });
         return;
       }
 
-      const { roomId, answer, from } = data;
+      const { roomId, answer, from, targetUserId } = data;
       
-      // Forward answer to all participants in the room except sender
-      socket.to(roomId).emit('answer', {
-        answer,
-        from: socket.data.user.id,
-        fromName: socket.data.user?.name || 'Unknown',
-        roomId
-      });
-
-      console.log(`📡 WebRTC answer sent from ${socket.data.user.name} in room ${roomId}`);
+      if (targetUserId) {
+        // Send answer to specific user
+        socket.to(`user_${targetUserId}`).emit('answer', {
+          answer,
+          from: socket.data.user.id,
+          fromName: socket.data.user?.name || 'Unknown',
+          roomId
+        });
+        console.log(`📡 WebRTC answer sent from ${socket.data.user.name} to user ${targetUserId} in room ${roomId}`);
+      } else {
+        // Forward answer to all participants in the room except sender
+        socket.to(roomId).emit('answer', {
+          answer,
+          from: socket.data.user.id,
+          fromName: socket.data.user?.name || 'Unknown',
+          roomId
+        });
+        console.log(`📡 WebRTC answer sent from ${socket.data.user.name} to all participants in room ${roomId}`);
+      }
     } catch (error) {
       console.error('Error handling WebRTC answer:', error);
       socket.emit('call-error', { message: 'Failed to send WebRTC answer' });
     }
   });
 
-  socket.on('candidate', async (data: { roomId: string; candidate: RTCIceCandidateInit; from: string }) => {
+  socket.on('candidate', async (data: { roomId: string; candidate: RTCIceCandidateInit; from: string; targetUserId?: string }) => {
     try {
       if (!socket.data.user?.id) {
         socket.emit('call-error', { message: 'Authentication required' });
         return;
       }
 
-      const { roomId, candidate, from } = data;
+      const { roomId, candidate, from, targetUserId } = data;
       
-      // Forward ICE candidate to all participants in the room except sender
-      socket.to(roomId).emit('candidate', {
-        candidate,
-        from: socket.data.user.id,
-        fromName: socket.data.user?.name || 'Unknown',
-        roomId
-      });
-
-      console.log(`🧊 ICE candidate sent from ${socket.data.user.name} in room ${roomId}`);
+      if (targetUserId) {
+        // Send candidate to specific user
+        socket.to(`user_${targetUserId}`).emit('candidate', {
+          candidate,
+          from: socket.data.user.id,
+          fromName: socket.data.user?.name || 'Unknown',
+          roomId
+        });
+        console.log(`🧊 ICE candidate sent from ${socket.data.user.name} to user ${targetUserId} in room ${roomId}`);
+      } else {
+        // Forward candidate to all participants in the room except sender
+        socket.to(roomId).emit('candidate', {
+          candidate,
+          from: socket.data.user.id,
+          fromName: socket.data.user?.name || 'Unknown',
+          roomId
+        });
+        console.log(`🧊 ICE candidate sent from ${socket.data.user.name} to all participants in room ${roomId}`);
+      }
     } catch (error) {
       console.error('Error handling ICE candidate:', error);
       socket.emit('call-error', { message: 'Failed to send ICE candidate' });
