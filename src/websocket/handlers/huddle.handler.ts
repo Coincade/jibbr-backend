@@ -56,7 +56,7 @@ const getICEServers = () => {
   return iceServers;
 };
 
-export const handleHuddleEvents = (socket: Socket) => {
+export const handleHuddleEvents = (socket: Socket, io: any) => {
   // Create a new huddle
   socket.on('create_huddle', async (data: { channelId: string; isVideoCall?: boolean }) => {
     try {
@@ -331,6 +331,9 @@ export const handleHuddleEvents = (socket: Socket) => {
 
       const { roomId, type, from, participants } = data;
       
+      // Join the call room as the caller
+      await socket.join(roomId);
+      
       // Notify all participants about incoming call
       participants.forEach(participantId => {
         socket.to(`user_${participantId}`).emit('incoming-call', {
@@ -363,8 +366,8 @@ export const handleHuddleEvents = (socket: Socket) => {
         // Join the call room
         await socket.join(roomId);
         
-        // Notify caller and other participants
-        socket.to(roomId).emit('user-joined', {
+        // Notify all participants in the room about the new participant
+        io.to(roomId).emit('user-joined', {
           userId: socket.data.user.id,
           name: socket.data.user?.name || 'Unknown',
           type,

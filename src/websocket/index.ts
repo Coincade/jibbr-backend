@@ -221,7 +221,7 @@ const handleConnection = (socket: Socket): void => {
   });
 
   // Handle huddle events
-  handleHuddleEvents(socket);
+  handleHuddleEvents(socket, io);
 
   // Handle disconnection
   socket.on('disconnect', (reason) => {
