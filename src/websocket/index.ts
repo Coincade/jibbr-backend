@@ -8,7 +8,7 @@ import { authenticateSocket, removeClientFromAllChannels, addClientToChannel, re
 import { handleSendMessage, handleEditMessage, handleDeleteMessage, handleForwardMessage } from './handlers/message.handler.js';
 import { handleAddReaction, handleRemoveReaction } from './handlers/reaction.handler.js';
 import { handleSendDirectMessage, handleEditDirectMessage, handleDeleteDirectMessage, handleAddDirectReaction, handleRemoveDirectReaction, handleForwardDirectMessage } from './handlers/direct-message.handler.js';
-import { handleHuddleEvents } from './handlers/huddle.handler.js';
+import { handleCallEvents } from './handlers/call.handler.js';
 
 // Global state for managing socket connections
 let io: SocketIOServer;
@@ -220,8 +220,8 @@ const handleConnection = (socket: Socket): void => {
     socket.emit('pong', { timestamp: Date.now() });
   });
 
-  // Handle huddle events
-  handleHuddleEvents(socket, io);
+  // Handle call events
+  handleCallEvents(socket, io);
 
   // Handle disconnection
   socket.on('disconnect', (reason) => {
