@@ -35,8 +35,9 @@ import channelRoutes from "./routes/channel.route.js";
 import uploadRoutes from "./routes/upload.route.js";
 import conversationRoutes from "./routes/conversation.route.js";
 import notificationRoutes from "./routes/notification.route.js";
+import presenceRoutes from "./routes/presence.route.js";
 import { appLimiter } from "./config/rateLimit.js";
-import { WebSocketService } from "./websocket/index.js";
+import { initializeWebSocketService, getWebSocketStats } from "./websocket/index.js";
 
 const app: Application = express();
 const server = http.createServer(app);
@@ -55,6 +56,7 @@ app.use("/api/channel", channelRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/conversations", conversationRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/presence", presenceRoutes);
 
 //Set view engine
 app.set('view engine', 'ejs');
@@ -89,11 +91,11 @@ import "./jobs/index.js";
 import { emailQueue, emailQueueName } from './jobs/EmailJob.js';
 
 // Initialize WebSocket service
-const wsService = new WebSocketService(server);
+initializeWebSocketService(server);
 
 // Add WebSocket stats endpoint
 app.get("/api/ws/stats", (req: Request, res: Response) => {
-  res.json(wsService.getStats());
+  res.json(getWebSocketStats());
 });
 
 server.listen(PORT, () => {

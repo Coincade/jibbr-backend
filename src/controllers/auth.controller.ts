@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { forgetPasswordSchema, loginSchema, registerSchema, resetPasswordSchema } from "../validation/auth.validations.js";
+import { forgetPasswordSchema, forgetResetPasswordSchema, loginSchema, registerSchema, resetPasswordSchema } from "../validation/auth.validations.js";
 import { ZodError } from "zod";
 import { checkDateHourDiff, formatError, renderEmailEjs } from "../helper.js";
 import prisma from "../config/database.js";
@@ -182,7 +182,7 @@ export const forgetPassword = async (req: Request, res: Response) => {
     },
     where:{ email: payload.email}
    })
-   const url = `${process.env.CLIENT_APP_URL}/reset-password?email=${payload.email}&token=${token}`;
+   const url = `${process.env.CLIENT_APP_URL}/forget-reset-password?email=${payload.email}&token=${token}`;
 
    const html = await renderEmailEjs("forget-password", {
     url,
@@ -204,6 +204,57 @@ export const forgetPassword = async (req: Request, res: Response) => {
     return res.status(500).json({ message: "Internal server error" });
   }
 };
+
+export const forgetResetPassword = async (req: Request, res: Response) => {
+  try{
+    const body = req.body;
+    const payload = forgetResetPasswordSchema.parse(body);
+
+    const user = await prisma.user.findUnique({ where: { email: payload.email } });
+
+    if (!user || user === null) {
+      return res.status(422).json({ message: "User not found", errors: { email: "User not found with this email" } });
+    }
+
+    // Check if user knows their current password
+    const isCurrentPasswordValid = await bcrypt.compare(payload.currentPassword, user.password);
+    if (!isCurrentPasswordValid) {
+      return res.status(422).json({ message: "Current password is incorrect", errors: { currentPassword: "Current password is incorrect" } });
+    }
+
+    // Double-check that new password and confirm password match (extra safety)
+    if (payload.password !== payload.confirmPassword) {
+      return res.status(422).json({ message: "Passwords do not match", errors: { confirmPassword: "New password and confirm password do not match" } });
+    }
+
+    // Prevent using the same password as current
+    const isSamePassword = await bcrypt.compare(payload.password, user.password);
+    if (isSamePassword) {
+      return res.status(422).json({ message: "New password must be different from current password", errors: { password: "New password must be different from current password" } });
+    }
+
+    // Update password
+    const salt = await bcrypt.genSalt(10);
+    const newPass = await bcrypt.hash(payload.password, salt);
+
+    await prisma.user.update({
+      data: {
+        password: newPass,
+      },
+      where: { email: payload.email },
+    });
+
+    return res.status(200).json({ message: "Password changed successfully" });
+
+  } catch (error) {
+    // console.log("Error in resetPassword controller:", error);
+    if (error instanceof ZodError) {
+      const errors = formatError(error);
+      return res.status(422).json({ message: "Invalid data", errors });
+    }
+    return res.status(500).json({ message: "Internal server error" });
+  }
+}
 
 export const resetPassword = async (req: Request, res: Response) => {
   try {
