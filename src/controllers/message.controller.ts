@@ -1,4 +1,4 @@
-import { formatError } from "../helper.js";
+import { formatError, isFileAttachmentsEnabledForChannel } from "../helper.js";
 import { Request, Response } from "express";
 import prisma from "../config/database.js";
 import { uploadToSpaces, deleteFromSpaces } from "../config/upload.js";
@@ -123,6 +123,14 @@ export const sendMessageWithAttachments = async (req: Request, res: Response) =>
 
     if (!channelMember) {
       return res.status(403).json({ message: "You are not a member of this channel" });
+    }
+
+    // Check if file attachments are enabled for this workspace
+    const attachmentsEnabled = await isFileAttachmentsEnabledForChannel(payload.channelId);
+    if (!attachmentsEnabled) {
+      return res.status(403).json({ 
+        message: "File attachments are disabled for this workspace" 
+      });
     }
 
     // If replying, check if the original message exists

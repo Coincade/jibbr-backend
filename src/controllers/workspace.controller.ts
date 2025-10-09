@@ -331,7 +331,7 @@ export const updateWorkspace = async (req: Request, res: Response) => {
     }
 
     const workspaceId = req.params.id;
-    const { name } = req.body;
+    const { name, fileAttachmentsEnabled } = req.body;
 
     if (!name) {
       return res.status(400).json({ message: "Name is required" });
@@ -347,13 +347,35 @@ export const updateWorkspace = async (req: Request, res: Response) => {
       return res.status(422).json({ message: "Workspace not found" });
     }
 
+    // Check if user is admin of this workspace
+    const member = await prisma.member.findFirst({
+      where: {
+        userId: user.id,
+        workspaceId: workspaceId,
+        isActive: true
+      }
+    });
+
+    const isWorkspaceCreator = wk.userId === user.id;
+    const isAdmin = member?.role === "ADMIN";
+
+    if (!isWorkspaceCreator && !isAdmin) {
+      return res.status(403).json({ message: "You don't have permission to update this workspace" });
+    }
+
+    // Prepare update data
+    const updateData: any = { name };
+    
+    // Only allow fileAttachmentsEnabled to be updated by admins
+    if (fileAttachmentsEnabled !== undefined && (isWorkspaceCreator || isAdmin)) {
+      updateData.fileAttachmentsEnabled = fileAttachmentsEnabled;
+    }
+
     const workspace = await prisma.workspace.update({
       where: {
         id: wk.id,
       },
-      data: {
-        name,
-      },
+      data: updateData,
     });
 
     return res.status(200).json({
@@ -602,6 +624,132 @@ export const getPublicChannels = async (req: Request, res: Response) => {
     return res.status(200).json({
       message: "Public channels fetched successfully",
       data: publicChannels,
+    });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      const errors = formatError(error);
+      return res.status(422).json({ message: "Invalid data", errors });
+    }
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const updateMemberRole = async (req: Request, res: Response) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(422).json({ message: "User not found" });
+    }
+
+    const workspaceId = req.params.id;
+    const memberId = req.params.memberId;
+    const { role } = req.body;
+
+    // Validate role
+    if (!role || !["ADMIN", "MODERATOR", "MEMBER"].includes(role)) {
+      return res.status(400).json({ 
+        message: "Invalid role. Role must be ADMIN, MODERATOR, or MEMBER" 
+      });
+    }
+
+    // Check if workspace exists and is active
+    const workspace = await prisma.workspace.findFirst({
+      where: {
+        id: workspaceId,
+        isActive: true,
+        deletedAt: null,
+      },
+    });
+
+    if (!workspace) {
+      return res.status(422).json({ message: "Workspace not found" });
+    }
+
+    // Check if the requesting user is admin of this workspace
+    const requestingMember = await prisma.member.findFirst({
+      where: {
+        userId: user.id,
+        workspaceId: workspaceId,
+        isActive: true
+      }
+    });
+
+    const isWorkspaceCreator = workspace.userId === user.id;
+    const isAdmin = requestingMember?.role === "ADMIN";
+
+    if (!isWorkspaceCreator && !isAdmin) {
+      return res.status(403).json({ 
+        message: "Only workspace admins can update member roles" 
+      });
+    }
+
+    // Check if the target member exists in this workspace
+    const targetMember = await prisma.member.findFirst({
+      where: {
+        id: memberId,
+        workspaceId: workspaceId,
+        isActive: true
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        }
+      }
+    });
+
+    if (!targetMember) {
+      return res.status(422).json({ 
+        message: "Member not found in this workspace" 
+      });
+    }
+
+    // Prevent workspace creator from changing their own role
+    if (targetMember.userId === workspace.userId) {
+      return res.status(400).json({ 
+        message: "Cannot change the role of the workspace creator" 
+      });
+    }
+
+    // Prevent users from changing their own role
+    if (targetMember.userId === user.id) {
+      return res.status(400).json({ 
+        message: "Cannot change your own role" 
+      });
+    }
+
+    // Update the member's role
+    const updatedMember = await prisma.member.update({
+      where: {
+        id: memberId,
+      },
+      data: {
+        role: role as "ADMIN" | "MODERATOR" | "MEMBER",
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        }
+      }
+    });
+
+    return res.status(200).json({
+      message: `Member role updated to ${role} successfully`,
+      data: {
+        memberId: updatedMember.id,
+        userId: updatedMember.userId,
+        userName: updatedMember.user.name,
+        userEmail: updatedMember.user.email,
+        role: updatedMember.role,
+        workspaceId: updatedMember.workspaceId
+      },
     });
   } catch (error) {
     if (error instanceof ZodError) {

@@ -3,6 +3,7 @@ import { broadcastToChannel, validateChannelMembership, getUserInfo } from '../u
 import { sendMessageSchema, updateMessageSchema } from '../../validation/message.validations.js';
 import { ZodError } from 'zod';
 import { NotificationService } from '../../services/notification.service.js';
+import { isFileAttachmentsEnabledForChannel } from '../../helper.js';
 
 /**
  * Handle send message event
@@ -30,6 +31,14 @@ export const handleSendMessage = async (
     const isMember = await validateChannelMembership(socket.data.user.id, data.channelId!);
     if (!isMember) {
       throw new Error('You are not a member of this channel');
+    }
+
+    // Check if file attachments are enabled for this workspace (if attachments are provided)
+    if (data.attachments && data.attachments.length > 0) {
+      const attachmentsEnabled = await isFileAttachmentsEnabledForChannel(data.channelId!);
+      if (!attachmentsEnabled) {
+        throw new Error('File attachments are disabled for this workspace');
+      }
     }
 
     // Get user info

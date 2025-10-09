@@ -1,5 +1,5 @@
 import express, { RequestHandler } from "express";
-import { createWorkspace, getAllWorkspaces, getWorkspace, getAllWorkspacesForUser, getWorkspaceMembers, joinWorkspace, leaveWorkspace, updateWorkspace, softDeleteWorkspace, hardDeleteWorkspace, getPublicChannels } from "../controllers/workspace.controller.js";
+import { createWorkspace, getAllWorkspaces, getWorkspace, getAllWorkspacesForUser, getWorkspaceMembers, joinWorkspace, leaveWorkspace, updateWorkspace, softDeleteWorkspace, hardDeleteWorkspace, getPublicChannels, updateMemberRole } from "../controllers/workspace.controller.js";
 import authMiddleware from "../middleware/Auth.middleware.js";
 import roleMiddleware from "../middleware/Role.middleware.js";
 
@@ -15,9 +15,16 @@ router.get("/get-workspace-members/:id", authMiddleware as unknown as RequestHan
 router.get("/get-public-channels/:id", authMiddleware as unknown as RequestHandler, getPublicChannels as unknown as RequestHandler);
 router.get("/:id", authMiddleware as unknown as RequestHandler, getWorkspace as unknown as RequestHandler);
 
+// Update member role (admin only)
+router.put("/:id/members/:memberId/role", 
+    authMiddleware as unknown as RequestHandler, 
+    roleMiddleware(["ADMIN"]) as unknown as RequestHandler, 
+    updateMemberRole as unknown as RequestHandler
+);
+
 router.put("/:id", 
     authMiddleware as unknown as RequestHandler, 
-    roleMiddleware(["ADMIN", "MODERATOR"]) as unknown as RequestHandler, 
+    roleMiddleware(["ADMIN"]) as unknown as RequestHandler, 
     updateWorkspace as unknown as RequestHandler
 );
 

@@ -46,6 +46,7 @@ model Workspace {
   image       String?
   joinCode    String
   isActive    Boolean   @default(true)
+  fileAttachmentsEnabled Boolean @default(true)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt @default(now())
   deletedAt   DateTime?

@@ -3,6 +3,7 @@ import { broadcastToConversation, validateConversationParticipation, getUserInfo
 import { sendDirectMessageSchema, updateMessageSchema } from '../../validation/message.validations.js';
 import { ZodError } from 'zod';
 import { NotificationService } from '../../services/notification.service.js';
+import { isFileAttachmentsEnabledForConversation } from '../../helper.js';
 
 /**
  * Handle send direct message event
@@ -30,6 +31,14 @@ export const handleSendDirectMessage = async (
     const isParticipant = await validateConversationParticipation(socket.data.user.id, data.conversationId);
     if (!isParticipant) {
       throw new Error('You are not a participant of this conversation');
+    }
+
+    // Check if file attachments are enabled for this conversation (if attachments are provided)
+    if (data.attachments && data.attachments.length > 0) {
+      const attachmentsEnabled = await isFileAttachmentsEnabledForConversation(data.conversationId);
+      if (!attachmentsEnabled) {
+        throw new Error('File attachments are disabled for this conversation');
+      }
     }
 
     // Get user info
