@@ -1,4 +1,5 @@
 import { formatError, isFileAttachmentsEnabledForChannel } from "../helper.js";
+import { CacheService } from "../services/cache.service.js";
 import { Request, Response } from "express";
 import prisma from "../config/database.js";
 import { uploadToSpaces, deleteFromSpaces } from "../config/upload.js";
@@ -240,59 +241,133 @@ export const getMessages = async (req: Request, res: Response) => {
 
     const skip = (payload.page - 1) * payload.limit;
 
-    const messages = await prisma.message.findMany({
-      where: {
-        channelId: payload.channelId,
-        deletedAt: null, // Exclude soft-deleted messages
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            image: true,
-          },
-        },
-        replyTo: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-          },
-        },
-        attachments: true,
-        reactions: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-          },
-        },
-        _count: {
-          select: {
-            replies: true,
-          },
-        },
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-      skip,
-      take: payload.limit,
-    });
+    // Try to get recent messages from cache first (for page 1 with small limit)
+    let messages;
+    let total;
 
-    const total = await prisma.message.count({
-      where: {
-        channelId: payload.channelId,
-        deletedAt: null, // Exclude soft-deleted messages
-      },
-    });
+    if (payload.page === 1 && payload.limit <= 50) {
+      const cachedMessages = await CacheService.getRecentMessages(payload.channelId);
+      if (cachedMessages && cachedMessages.length > 0) {
+        messages = cachedMessages.slice(0, payload.limit);
+        // For cached messages, we'll get total from database
+        total = await prisma.message.count({
+          where: {
+            channelId: payload.channelId,
+            deletedAt: null,
+          },
+        });
+      } else {
+        // Fallback to database
+        messages = await prisma.message.findMany({
+          where: {
+            channelId: payload.channelId,
+            deletedAt: null,
+          },
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                image: true,
+              },
+            },
+            replyTo: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
+              },
+            },
+            attachments: true,
+            reactions: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
+              },
+            },
+            _count: {
+              select: {
+                replies: true,
+              },
+            },
+          },
+          orderBy: {
+            createdAt: "desc",
+          },
+          skip,
+          take: payload.limit,
+        });
+
+        total = await prisma.message.count({
+          where: {
+            channelId: payload.channelId,
+            deletedAt: null,
+          },
+        });
+      }
+    } else {
+      // For pagination beyond first page, always use database
+      messages = await prisma.message.findMany({
+        where: {
+          channelId: payload.channelId,
+          deletedAt: null,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              image: true,
+            },
+          },
+          replyTo: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
+          attachments: true,
+          reactions: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
+          _count: {
+            select: {
+              replies: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        skip,
+        take: payload.limit,
+      });
+
+      total = await prisma.message.count({
+        where: {
+          channelId: payload.channelId,
+          deletedAt: null,
+        },
+      });
+    }
 
     return res.status(200).json({
       message: "Messages fetched successfully",

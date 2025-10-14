@@ -4,6 +4,7 @@ import { sendDirectMessageSchema, updateMessageSchema } from '../../validation/m
 import { ZodError } from 'zod';
 import { NotificationService } from '../../services/notification.service.js';
 import { isFileAttachmentsEnabledForConversation } from '../../helper.js';
+import { CacheService } from '../../services/cache.service.js';
 
 /**
  * Handle send direct message event
@@ -61,7 +62,7 @@ export const handleSendDirectMessage = async (
     }
     
     // Prepare message data
-    const messageData: any = {
+    const messagePayload: any = {
       content: payload.content,
       conversationId: data.conversationId,
       userId: socket.data.user.id,
@@ -70,7 +71,7 @@ export const handleSendDirectMessage = async (
 
     // Create message with attachments if provided
     const message = await prisma.message.create({
-      data: messageData,
+      data: messagePayload,
       include: {
         user: {
           select: {
@@ -172,16 +173,8 @@ export const handleSendDirectMessage = async (
       }
     }
 
-    // Create notifications for conversation participants (except sender)
-    await NotificationService.notifyNewDirectMessage(
-      data.conversationId,
-      message.id,
-      socket.data.user.id,
-      payload.content
-    );
-
-    // Broadcast to conversation using Socket.IO
-    io.to(data.conversationId).emit('new_direct_message', {
+    // Prepare message data for broadcasting
+    const broadcastData = {
       ...message,
       createdAt: message.createdAt.toISOString(),
       updatedAt: message.updatedAt.toISOString(),
@@ -193,7 +186,61 @@ export const handleSendDirectMessage = async (
         ...attachment,
         createdAt: attachment.createdAt.toISOString(),
       })),
-    } as DirectMessageData);
+    } as DirectMessageData;
+
+    // Broadcast immediately (critical for real-time experience)
+    io.to(data.conversationId).emit('new_direct_message', broadcastData);
+
+    // Cache recent messages asynchronously (non-blocking)
+    setImmediate(async () => {
+      try {
+        // Get recent messages for this conversation
+        const recentMessages = await prisma.message.findMany({
+          where: { conversationId: data.conversationId },
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                image: true,
+              },
+            },
+            attachments: true,
+            reactions: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 50, // Cache last 50 messages
+        });
+
+        // Cache the messages
+        await CacheService.cacheRecentMessages(`conversation:${data.conversationId}`, recentMessages, 5);
+      } catch (error) {
+        console.error('Error caching recent direct messages:', error);
+      }
+    });
+
+    // Send notifications asynchronously (non-blocking)
+    setImmediate(async () => {
+      try {
+        await NotificationService.notifyNewDirectMessage(
+          data.conversationId,
+          message.id,
+          socket.data.user.id,
+          payload.content
+        );
+      } catch (error) {
+        console.error('Error sending direct message notifications:', error);
+      }
+    });
 
   } catch (error) {
     if (error instanceof ZodError) {

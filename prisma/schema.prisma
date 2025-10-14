@@ -266,3 +266,42 @@ model UserNotificationPreference {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt @default(now())
 }
+
+// Cache models for PostgreSQL JSONB caching
+model MessageCache {
+  id          String    @id @default(cuid())
+  channelId   String    @unique
+  messageData Json      // Store recent messages as JSON
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt @default(now())
+  expiresAt   DateTime  // TTL for cache expiration
+
+  @@index([channelId])
+  @@index([expiresAt])
+}
+
+model SessionCache {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  token     String   @unique
+  userData  Json     // Store user session data as JSON
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt @default(now())
+  expiresAt DateTime // Session expiration
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+}
+
+model WorkspaceCache {
+  id          String   @id @default(cuid())
+  workspaceId String   @unique
+  workspaceData Json   // Store workspace data as JSON
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt @default(now())
+  expiresAt   DateTime // Cache expiration
+
+  @@index([workspaceId])
+  @@index([expiresAt])
+}

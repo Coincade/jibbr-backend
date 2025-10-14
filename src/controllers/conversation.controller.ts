@@ -1,4 +1,5 @@
 import { formatError, isFileAttachmentsEnabledForConversation } from "../helper.js";
+import { CacheService } from "../services/cache.service.js";
 import { Request, Response } from "express";
 import prisma from "../config/database.js";
 import { uploadToSpaces, deleteFromSpaces } from "../config/upload.js";
@@ -235,54 +236,123 @@ export const getConversationMessages = async (req: Request, res: Response) => {
 
     const skip = (Number(page) - 1) * Number(limit);
 
-    const messages = await prisma.message.findMany({
-      where: {
-        conversationId,
-        deletedAt: null, // Exclude soft-deleted messages
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            image: true
-          }
-        },
-        replyTo: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true
-              }
-            }
-          }
-        },
-        attachments: true,
-        reactions: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true
-              }
-            }
-          }
-        }
-      },
-      orderBy: {
-        createdAt: 'desc'
-      },
-      skip,
-      take: Number(limit)
-    });
+    // Try to get recent messages from cache first (for page 1 with small limit)
+    let messages;
+    let total;
 
-    const total = await prisma.message.count({
-      where: {
-        conversationId,
-        deletedAt: null // Exclude soft-deleted messages
+    if (Number(page) === 1 && Number(limit) <= 50) {
+      const cachedMessages = await CacheService.getRecentMessages(`conversation:${conversationId}`);
+      if (cachedMessages && cachedMessages.length > 0) {
+        messages = cachedMessages.slice(0, Number(limit));
+        // For cached messages, we'll get total from database
+        total = await prisma.message.count({
+          where: {
+            conversationId,
+            deletedAt: null,
+          },
+        });
+      } else {
+        // Fallback to database
+        messages = await prisma.message.findMany({
+          where: {
+            conversationId,
+            deletedAt: null,
+          },
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                image: true
+              }
+            },
+            replyTo: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true
+                  }
+                }
+              }
+            },
+            attachments: true,
+            reactions: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true
+                  }
+                }
+              }
+            }
+          },
+          orderBy: {
+            createdAt: 'desc'
+          },
+          skip,
+          take: Number(limit)
+        });
+
+        total = await prisma.message.count({
+          where: {
+            conversationId,
+            deletedAt: null
+          }
+        });
       }
-    });
+    } else {
+      // For pagination beyond first page, always use database
+      messages = await prisma.message.findMany({
+        where: {
+          conversationId,
+          deletedAt: null,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              image: true
+            }
+          },
+          replyTo: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true
+                }
+              }
+            }
+          },
+          attachments: true,
+          reactions: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true
+                }
+              }
+            }
+          }
+        },
+        orderBy: {
+          createdAt: 'desc'
+        },
+        skip,
+        take: Number(limit)
+      });
+
+      total = await prisma.message.count({
+        where: {
+          conversationId,
+          deletedAt: null
+        }
+      });
+    }
 
     return res.status(200).json({
       message: "Messages fetched successfully",
@@ -291,11 +361,11 @@ export const getConversationMessages = async (req: Request, res: Response) => {
           ...msg,
           createdAt: msg.createdAt.toISOString(),
           updatedAt: msg.updatedAt.toISOString(),
-          reactions: msg.reactions.map(reaction => ({
+          reactions: msg.reactions.map((reaction: any) => ({
             ...reaction,
             createdAt: reaction.createdAt.toISOString()
           })),
-          attachments: msg.attachments.map(attachment => ({
+          attachments: msg.attachments.map((attachment: any) => ({
             ...attachment,
             createdAt: attachment.createdAt.toISOString()
           }))

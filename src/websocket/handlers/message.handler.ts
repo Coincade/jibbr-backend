@@ -4,6 +4,7 @@ import { sendMessageSchema, updateMessageSchema } from '../../validation/message
 import { ZodError } from 'zod';
 import { NotificationService } from '../../services/notification.service.js';
 import { isFileAttachmentsEnabledForChannel } from '../../helper.js';
+import { CacheService } from '../../services/cache.service.js';
 
 /**
  * Handle send message event
@@ -61,7 +62,7 @@ export const handleSendMessage = async (
     }
     
     // Prepare message data
-    const messageData: any = {
+    const messagePayload: any = {
       content: payload.content,
       channelId: payload.channelId,
       userId: socket.data.user.id,
@@ -70,7 +71,7 @@ export const handleSendMessage = async (
 
     // Create message with attachments if provided
     const message = await prisma.message.create({
-      data: messageData,
+      data: messagePayload,
       include: {
         user: {
           select: {
@@ -171,25 +172,8 @@ export const handleSendMessage = async (
         return;
       }
     }
-    // Get channel info for notifications
-    const channel = await prisma.channel.findUnique({
-      where: { id: data.channelId },
-      select: { name: true },
-    });
-
-    // Create notifications for channel members (except sender)
-    if (channel) {
-      await NotificationService.notifyNewChannelMessage(
-        data.channelId!,
-        message.id,
-        socket.data.user.id,
-        payload.content,
-        channel.name
-      );
-    }
-
-    // Broadcast to channel using Socket.IO (to everyone, including sender)
-    io.to(data.channelId!).emit('new_message', {
+    // Prepare message data for broadcasting
+    const broadcastData = {
       ...message,
       createdAt: message.createdAt.toISOString(),
       updatedAt: message.updatedAt.toISOString(),
@@ -201,7 +185,69 @@ export const handleSendMessage = async (
         ...attachment,
         createdAt: attachment.createdAt.toISOString(),
       })),
-    } as MessageData);
+    } as MessageData;
+
+    // Broadcast immediately (critical for real-time experience)
+    io.to(data.channelId!).emit('new_message', broadcastData);
+
+    // Cache recent messages asynchronously (non-blocking)
+    setImmediate(async () => {
+      try {
+        // Get recent messages for this channel
+        const recentMessages = await prisma.message.findMany({
+          where: { channelId: data.channelId },
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                image: true,
+              },
+            },
+            attachments: true,
+            reactions: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 50, // Cache last 50 messages
+        });
+
+        // Cache the messages
+        await CacheService.cacheRecentMessages(data.channelId!, recentMessages, 5);
+      } catch (error) {
+        console.error('Error caching recent messages:', error);
+      }
+    });
+
+    // Send notifications asynchronously (non-blocking)
+    setImmediate(async () => {
+      try {
+        const channel = await prisma.channel.findUnique({
+          where: { id: data.channelId },
+          select: { name: true },
+        });
+
+        if (channel) {
+          await NotificationService.notifyNewChannelMessage(
+            data.channelId!,
+            message.id,
+            socket.data.user.id,
+            payload.content,
+            channel.name
+          );
+        }
+      } catch (error) {
+        console.error('Error sending notifications:', error);
+      }
+    });
 
   } catch (error) {
     if (error instanceof ZodError) {

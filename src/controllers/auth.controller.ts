@@ -7,6 +7,7 @@ import bcrypt from "bcrypt";
 import { v4 as uuidv4 } from "uuid";
 import { emailQueue, emailQueueName } from "../jobs/EmailJob.js";
 import jwt from "jsonwebtoken";
+import { CacheService } from "../services/cache.service.js";
 
 export const register = async (req: Request, res: Response) => {
   try {
@@ -102,6 +103,14 @@ export const login = async (req: Request, res: Response) => {
       expiresIn: "30d",
     })
 
+    // Cache user session for faster future requests
+    await CacheService.cacheUserSession(
+      user.id,
+      token,
+      JWTPayload,
+      24 * 30 // 30 days (same as JWT expiry)
+    );
+
     return res.status(200).json({
       message: "Logged in successfully",
       data: {
@@ -122,7 +131,17 @@ export const login = async (req: Request, res: Response) => {
   }
 };
 export const logout = async (req: Request, res: Response) => {
-  res.send("Logged out successfully!");
+  try {
+    const user = req.user;
+    if (user) {
+      // Invalidate user session from cache
+      await CacheService.invalidateUserSession(user.id);
+    }
+    res.status(200).json({ message: "Logged out successfully!" });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(200).json({ message: "Logged out successfully!" });
+  }
 };
 
 export const verifyEmail = async (req: Request, res: Response) => {
