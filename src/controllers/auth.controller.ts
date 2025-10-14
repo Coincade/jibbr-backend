@@ -365,32 +365,58 @@ export const deleteUser = async (req: Request, res: Response) => {
       where: { userId: userIdToDelete }
     });
 
-    // 6. Delete all workspace memberships
+    // 6. Handle channels where user is admin - transfer admin to workspace creator or delete channel
+    const channelsWhereUserIsAdmin = await prisma.channel.findMany({
+      where: { channelAdminId: userIdToDelete },
+      include: { workspace: true }
+    });
+
+    for (const channel of channelsWhereUserIsAdmin) {
+      // Try to transfer admin to workspace creator
+      const workspaceCreator = await prisma.user.findUnique({
+        where: { id: channel.workspace.userId }
+      });
+
+      if (workspaceCreator) {
+        // Transfer admin to workspace creator
+        await prisma.channel.update({
+          where: { id: channel.id },
+          data: { channelAdminId: workspaceCreator.id }
+        });
+      } else {
+        // If workspace creator doesn't exist, delete the channel
+        await prisma.channel.delete({
+          where: { id: channel.id }
+        });
+      }
+    }
+
+    // 7. Delete all workspace memberships
     await prisma.member.deleteMany({
       where: { userId: userIdToDelete }
     });
 
-    // 7. Delete all conversation participations
+    // 8. Delete all conversation participations
     await prisma.conversationParticipant.deleteMany({
       where: { userId: userIdToDelete }
     });
 
-    // 8. Delete all conversation read statuses
+    // 9. Delete all conversation read statuses
     await prisma.conversationReadStatus.deleteMany({
       where: { userId: userIdToDelete }
     });
 
-    // 9. Delete all user notifications
+    // 10. Delete all user notifications
     await prisma.userNotification.deleteMany({
       where: { userId: userIdToDelete }
     });
 
-    // 10. Delete all notification preferences
+    // 11. Delete all notification preferences
     await prisma.userNotificationPreference.deleteMany({
       where: { userId: userIdToDelete }
     });
 
-    // 11. Handle workspaces created by this user
+    // 12. Handle workspaces created by this user
     // First, get all workspaces created by this user
     const userWorkspaces = await prisma.workspace.findMany({
       where: { userId: userIdToDelete }
@@ -463,7 +489,7 @@ export const deleteUser = async (req: Request, res: Response) => {
       });
     }
 
-    // 12. Finally, delete the user
+    // 13. Finally, delete the user
     await prisma.user.delete({
       where: { id: userIdToDelete }
     });
