@@ -15,21 +15,28 @@ export const handleSendMessage = async (
   channelClients: ChannelClientsMap,
   io: any // <-- add io parameter
 ): Promise<void> => {
+  const startTime = Date.now();
+  console.log(`[PERF] Message handling started at ${startTime}`);
+  
   try {
     if (!socket.data.user) {
       throw new Error('User not authenticated');
     }
 
     // Validate input
+    const validationStart = Date.now();
     const payload = sendMessageSchema.parse({
       content: data.content,
       channelId: data.channelId,
       replyToId: data.replyToId,
       attachments: data.attachments,
     });
+    console.log(`[PERF] Validation took ${Date.now() - validationStart}ms`);
 
     // Validate channel membership
+    const membershipStart = Date.now();
     const isMember = await validateChannelMembership(socket.data.user.id, data.channelId!);
+    console.log(`[PERF] Channel membership check took ${Date.now() - membershipStart}ms`);
     if (!isMember) {
       throw new Error('You are not a member of this channel');
     }
@@ -49,7 +56,9 @@ export const handleSendMessage = async (
     }
 
     // Save message to database
+    const dbStart = Date.now();
     const { default: prisma } = await import('../../config/database.js');
+    console.log(`[PERF] Database import took ${Date.now() - dbStart}ms`);
     
     // If replying, check if the original message exists and is not deleted
     if (payload.replyToId) {
@@ -70,6 +79,7 @@ export const handleSendMessage = async (
     };
 
     // Create message with attachments if provided
+    const messageCreateStart = Date.now();
     const message = await prisma.message.create({
       data: messagePayload,
       include: {
@@ -103,6 +113,7 @@ export const handleSendMessage = async (
         },
       },
     });
+    console.log(`[PERF] Message creation took ${Date.now() - messageCreateStart}ms`);
 
     // Create attachments if provided
     if (data.attachments && data.attachments.length > 0) {
@@ -188,7 +199,10 @@ export const handleSendMessage = async (
     } as MessageData;
 
     // Broadcast immediately (critical for real-time experience)
+    const broadcastStart = Date.now();
     io.to(data.channelId!).emit('new_message', broadcastData);
+    console.log(`[PERF] Broadcast took ${Date.now() - broadcastStart}ms`);
+    console.log(`[PERF] Total message handling took ${Date.now() - startTime}ms`);
 
     // Cache recent messages asynchronously (non-blocking)
     setImmediate(async () => {

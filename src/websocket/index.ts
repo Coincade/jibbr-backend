@@ -1,8 +1,8 @@
 import { Server as SocketIOServer } from 'socket.io';
 import { Server } from 'http';
 import { Socket } from 'socket.io';
-import { createAdapter } from '@socket.io/redis-adapter';
-import { createRedisClients } from '../config/redis.js';
+// import { createAdapter } from '@socket.io/redis-adapter';
+// import { createRedisClients } from '../config/redis.js';
 import { checkMessageRateLimit } from '../services/rate-limiter.js';
 import { authenticateSocket, removeClientFromAllChannels, addClientToChannel, removeClientFromAllConversations, addClientToConversation } from './utils.js';
 import { handleSendMessage, handleEditMessage, handleDeleteMessage, handleForwardMessage } from './handlers/message.handler.js';
@@ -51,15 +51,19 @@ export const initializeWebSocketService = async (server: Server): Promise<Socket
     }
   });
 
-  // 🔥 REDIS ADAPTER - Enable horizontal scaling
-  try {
-    const { pubClient, subClient } = await createRedisClients();
-    io.adapter(createAdapter(pubClient, subClient));
-    console.log('🚀 Redis adapter enabled - Horizontal scaling ready!');
-  } catch (error) {
-    console.error('❌ Redis adapter failed, using in-memory adapter:', error);
-    console.warn('⚠️  Running in single-server mode. Horizontal scaling disabled.');
-  }
+  // 🔥 REDIS ADAPTER - DISABLED FOR PERFORMANCE
+  // Using in-memory adapter for better performance without Redis dependency
+  console.log('🚀 Using in-memory adapter - Optimized for single-server performance!');
+  
+  // Uncomment below if you want to re-enable Redis scaling:
+  // try {
+  //   const { pubClient, subClient } = await createRedisClients();
+  //   io.adapter(createAdapter(pubClient, subClient));
+  //   console.log('🚀 Redis adapter enabled - Horizontal scaling ready!');
+  // } catch (error) {
+  //   console.error('❌ Redis adapter failed, using in-memory adapter:', error);
+  //   console.warn('⚠️  Running in single-server mode. Horizontal scaling disabled.');
+  // }
   
   setupEventHandlers();
   return io;
