@@ -133,8 +133,11 @@ export const verifyEmail = async (req: Request, res: Response) => {
     });
 
     if (user) {
+      if (user.email_verified_at && !user.email_verify_token) {
+        return res.redirect(`${process.env.CLIENT_APP_URL}/verify-email?email=${encodeURIComponent(email as string)}&token=${encodeURIComponent(token as string)}&already_verified=1`);
+      }
       if (token === user.email_verify_token) {
-        //Redirect to front page
+        //Update user verification status
         await prisma.user.update({
           data: {
             email_verify_token: null,
@@ -142,7 +145,7 @@ export const verifyEmail = async (req: Request, res: Response) => {
           },
           where: { email: email as string },
         });
-        return res.redirect(`${process.env.CLIENT_APP_URL}/login`);
+        return res.redirect(`${process.env.CLIENT_APP_URL}/verify-email?email=${encodeURIComponent(email as string)}&token=${encodeURIComponent(token as string)}`);
       }
     }
     res.redirect("/verify-error");
