@@ -6,6 +6,10 @@ export const appLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: "Too many requests, please try again later.",
+  // Trust proxy to get correct IP from X-Forwarded-For header
+  validate: {
+    xForwardedForHeader: false,
+  },
 });
 
 export const authLimiter = rateLimit({
@@ -14,4 +18,8 @@ export const authLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: "Too many requests, please try again later.",
+  // Trust proxy to get correct IP from X-Forwarded-For header
+  validate: {
+    xForwardedForHeader: false,
+  },
 });

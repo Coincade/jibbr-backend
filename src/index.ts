@@ -44,6 +44,9 @@ const server = http.createServer(app);
 
 const PORT = process.env.PORT || 7000;
 
+// Trust proxy - Required for Render/Railway/Heroku and other reverse proxies
+app.set('trust proxy', 1);
+
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
