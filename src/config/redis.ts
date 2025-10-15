@@ -1,15 +1,23 @@
 import { createClient } from 'redis';
 
-// Build Redis URL from environment variables
+// Build Redis URL from Aiven Valkey environment variables
 const buildRedisUrl = (): string => {
   // Support both REDIS_URL format and separate host/port/password
   if (process.env.REDIS_URL) {
+    console.log('🔗 Using REDIS_URL for WebSocket Redis connection');
     return process.env.REDIS_URL;
   }
 
   const host = process.env.REDIS_HOST || 'localhost';
   const port = process.env.REDIS_PORT || '6379';
   const password = process.env.REDIS_PASSWORD;
+
+  console.log('🔗 WebSocket Redis config:', {
+    host,
+    port,
+    hasPassword: !!password,
+    source: 'Aiven Valkey'
+  });
 
   // Build URL with or without password
   if (password) {
@@ -22,7 +30,7 @@ const redisUrl = buildRedisUrl();
 
 // Create Redis clients for Socket.IO adapter (Pub/Sub)
 export const createRedisClients = async () => {
-  console.log('🔄 Connecting to Redis:', redisUrl.replace(/:[^:@]+@/, ':****@')); // Hide password in logs
+  // console.log('🔄 Connecting to Redis:', redisUrl.replace(/:[^:@]+@/, ':****@')); // Hide password in logs
 
   const pubClient = createClient({ 
     url: redisUrl,

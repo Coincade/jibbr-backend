@@ -13,10 +13,10 @@ const envPath = path.join(__dirname, '../.env');
 dotenv.config({ path: envPath });
 
 // Debug log
-console.log('Environment variables after loading:', {
-    SMTP_USER: process.env.SMTP_USER,
-    SMTP_PASSWORD_EXISTS: !!process.env.SMTP_PASSWORD
-});
+// console.log('Environment variables after loading:', {
+//     SMTP_USER: process.env.SMTP_USER,
+//     SMTP_PASSWORD_EXISTS: !!process.env.SMTP_PASSWORD
+// });
 
 // Validate env
 if (!process.env.SMTP_USER || !process.env.SMTP_PASSWORD) {
