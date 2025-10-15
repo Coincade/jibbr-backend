@@ -1,5 +1,4 @@
 import nodemailer from "nodemailer";
-import type { Options as SMTPTransportOptions } from "nodemailer/lib/smtp-transport";
 
 const createTransporter = () => {
   console.log("Creating transporter with:", {
@@ -15,7 +14,7 @@ const createTransporter = () => {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASSWORD,
     },
-  } satisfies SMTPTransportOptions);
+  });
 };
 
 const sendEmail = async (to: string, subject: string, body: string) => {
@@ -51,7 +50,7 @@ const mailHelper = async (to: string, subject: string, body: string) => {
       user: process.env.GMAIL_USER,
       pass: process.env.GMAIL_PASS,
     },
-  } satisfies SMTPTransportOptions);
+  });
 
   try {
     console.log("Attempting to send email");
