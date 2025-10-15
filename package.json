@@ -8,9 +8,10 @@
     "server": "nodemon ./dist/index.js",
     "watch": "tsc -w",
     "dev": "concurrently \"npm run watch\" \"npm run server\" \"npm run watch-views\"",
-    "build": "tsc && npm run copy-files",
+    "build": "prisma generate && tsc && npm run copy-files",
     "copy-files": "copyfiles -u 1 \"src/views/**/*\" dist/",
     "watch-views": "nodemon --watch src/views -e ejs -x \"npm run copy-files\"",
+    "postinstall": "prisma generate",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"
