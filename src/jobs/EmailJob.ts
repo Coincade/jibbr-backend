@@ -10,6 +10,7 @@ interface EmailJobDataType{
     body: string;
 }
 
+
 // * Temporarily disabled to stop Redis retry errors
 // * Queue
 // export const emailQueue = new Queue(emailQueueName, {
