@@ -79,7 +79,7 @@ export const getOrCreateConversation = async (req: Request, res: Response) => {
         message: "Conversation found",
         data: {
           id: existingConversation.id,
-          participants: existingConversation.participants.map(p => ({
+          participants: existingConversation.participants.map((p: { id: string; userId: string; user: any; isActive: boolean; createdAt: Date; updatedAt: Date }) => ({
             id: p.id,
             userId: p.userId,
             user: p.user,
@@ -121,7 +121,7 @@ export const getOrCreateConversation = async (req: Request, res: Response) => {
       message: "Conversation created successfully",
       data: {
         id: conversation.id,
-        participants: conversation.participants.map(p => ({
+        participants: conversation.participants.map((p: { id: string; userId: string; user: any; isActive: boolean; createdAt: Date; updatedAt: Date }) => ({
           id: p.id,
           userId: p.userId,
           user: p.user,
@@ -190,9 +190,9 @@ export const getUserConversations = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       message: "Conversations fetched successfully",
-      data: conversations.map(conv => ({
+      data: conversations.map((conv: { id: string; participants: any[]; messages: any[] }) => ({
         id: conv.id,
-        participants: conv.participants.map(p => ({
+        participants: conv.participants.map((p: { id: string; userId: string; user: any; isActive: boolean; createdAt: Date; updatedAt: Date }) => ({
           id: p.id,
           userId: p.userId,
           user: p.user,
@@ -287,15 +287,15 @@ export const getConversationMessages = async (req: Request, res: Response) => {
     return res.status(200).json({
       message: "Messages fetched successfully",
       data: {
-        messages: messages.map(msg => ({
+        messages: messages.map((msg: any) => ({
           ...msg,
           createdAt: msg.createdAt.toISOString(),
           updatedAt: msg.updatedAt.toISOString(),
-          reactions: msg.reactions.map(reaction => ({
+          reactions: msg.reactions.map((reaction: { createdAt: Date }) => ({
             ...reaction,
             createdAt: reaction.createdAt.toISOString()
           })),
-          attachments: msg.attachments.map(attachment => ({
+          attachments: msg.attachments.map((attachment: { createdAt: Date }) => ({
             ...attachment,
             createdAt: attachment.createdAt.toISOString()
           }))
@@ -398,11 +398,11 @@ export const sendDirectMessage = async (req: Request, res: Response) => {
         ...message,
         createdAt: message.createdAt.toISOString(),
         updatedAt: message.updatedAt.toISOString(),
-        reactions: message.reactions.map(reaction => ({
+        reactions: message.reactions.map((reaction: { createdAt: Date }) => ({
           ...reaction,
           createdAt: reaction.createdAt.toISOString()
         })),
-        attachments: message.attachments.map(attachment => ({
+        attachments: message.attachments.map((attachment: { createdAt: Date }) => ({
           ...attachment,
           createdAt: attachment.createdAt.toISOString()
         }))
@@ -524,11 +524,11 @@ export const sendDirectMessageWithAttachments = async (req: Request, res: Respon
         ...message,
         createdAt: message.createdAt.toISOString(),
         updatedAt: message.updatedAt.toISOString(),
-        reactions: message.reactions.map(reaction => ({
+        reactions: message.reactions.map((reaction: { createdAt: Date }) => ({
           ...reaction,
           createdAt: reaction.createdAt.toISOString()
         })),
-        attachments: message.attachments.map(attachment => ({
+        attachments: message.attachments.map((attachment: { createdAt: Date }) => ({
           ...attachment,
           createdAt: attachment.createdAt.toISOString()
         }))
@@ -604,6 +604,67 @@ export const deleteDirectMessage = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Error in deleteDirectMessage:', error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const getMentionableUsers = async (req: Request, res: Response) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(422).json({ message: "User not found" });
+    }
+
+    const conversationId = req.params.conversationId;
+
+    // Get conversation with participants
+    const conversation = await prisma.conversation.findFirst({
+      where: {
+        id: conversationId
+      },
+      include: {
+        participants: {
+          where: {
+            isActive: true
+          },
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                image: true,
+                email: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!conversation) {
+      return res.status(404).json({ message: "Conversation not found" });
+    }
+
+    // Check if user is a participant
+    const isParticipant = conversation.participants.some((p: { userId: string }) => p.userId === user.id);
+    if (!isParticipant) {
+      return res.status(403).json({ message: "You are not a participant of this conversation" });
+    }
+
+    // Return mentionable users (all conversation participants)
+    const mentionableUsers = conversation.participants.map((p: { user: { id: string; name: string | null; image: string | null; email: string } }) => ({
+      id: p.user.id,
+      name: p.user.name,
+      image: p.user.image,
+      email: p.user.email
+    }));
+
+    return res.status(200).json({
+      message: "Mentionable users fetched successfully",
+      data: mentionableUsers
+    });
+  } catch (error) {
+    console.error('Error in getMentionableUsers:', error);
     return res.status(500).json({ message: "Internal server error" });
   }
 }; 

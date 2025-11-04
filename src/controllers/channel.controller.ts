@@ -178,7 +178,7 @@ export const getChannel = async (req: Request, res: Response) => {
     }
 
     // Check if user is a member of the channel
-    const userChannelMembership = channel.members.find(member => member.userId === user.id);
+    const userChannelMembership = channel.members.find((member: { userId: string }) => member.userId === user.id);
     if (!userChannelMembership) {
       return res.status(403).json({ message: "You are not a member of this channel" });
     }
@@ -590,6 +590,68 @@ export const hardDeleteChannel = async (req: Request, res: Response) => {
       message: "Channel and all associated data permanently deleted successfully"
     });
   } catch (error) {
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const getMentionableUsers = async (req: Request, res: Response) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(422).json({ message: "User not found" });
+    }
+
+    const channelId = req.params.id;
+
+    // Get channel with members
+    const channel = await prisma.channel.findFirst({
+      where: {
+        id: channelId,
+        deletedAt: null
+      },
+      include: {
+        members: {
+          where: {
+            isActive: true
+          },
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                image: true,
+                email: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!channel) {
+      return res.status(404).json({ message: "Channel not found" });
+    }
+
+    // Check if user is a member of the channel
+    const userChannelMembership = channel.members.find((member: { userId: string }) => member.userId === user.id);
+    if (!userChannelMembership) {
+      return res.status(403).json({ message: "You are not a member of this channel" });
+    }
+
+    // Return mentionable users (all channel members)
+    const mentionableUsers = channel.members.map((member: { user: { id: string; name: string | null; image: string | null; email: string } }) => ({
+      id: member.user.id,
+      name: member.user.name,
+      image: member.user.image,
+      email: member.user.email
+    }));
+
+    return res.status(200).json({
+      message: "Mentionable users fetched successfully",
+      data: mentionableUsers
+    });
+  } catch (error) {
+    console.error('Error in getMentionableUsers:', error);
     return res.status(500).json({ message: "Internal server error" });
   }
 }; 

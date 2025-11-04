@@ -3,7 +3,7 @@ import { broadcastToConversation, validateConversationParticipation, getUserInfo
 import { sendDirectMessageSchema, updateMessageSchema } from '../../validation/message.validations.js';
 import { ZodError } from 'zod';
 import { NotificationService } from '../../services/notification.service.js';
-import { isFileAttachmentsEnabledForConversation } from '../../helper.js';
+import { isFileAttachmentsEnabledForConversation, parseMentionsFromHTML } from '../../helper.js';
 
 /**
  * Handle send direct message event
@@ -118,7 +118,21 @@ export const handleSendDirectMessage = async (
         data: attachmentData,
       });
 
-      // Fetch the message again with attachments
+      // Parse mentions from message content
+      const mentionedUserIds = parseMentionsFromHTML(payload.content);
+      
+      // Create mention records for mentioned users
+      if (mentionedUserIds.length > 0) {
+        await prisma.mention.createMany({
+          data: mentionedUserIds.map((userId: string) => ({
+            messageId: message.id,
+            userId: userId,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      // Fetch the message again with attachments and mentions
       const messageWithAttachments = await prisma.message.findUnique({
         where: { id: message.id },
         include: {
@@ -150,26 +164,95 @@ export const handleSendDirectMessage = async (
               },
             },
           },
+          mentions: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  image: true,
+                },
+              },
+            },
+          },
         },
       });
 
       if (messageWithAttachments) {
+        // Create notifications for conversation participants (except sender)
+        await NotificationService.notifyNewDirectMessage(
+          data.conversationId,
+          message.id,
+          socket.data.user.id,
+          payload.content
+        );
+
+        // Create mention notifications for mentioned users (in direct messages)
+        for (const mentionedUserId of mentionedUserIds) {
+          if (mentionedUserId !== socket.data.user.id) {
+            const isParticipant = await prisma.conversationParticipant.findFirst({
+              where: {
+                conversationId: data.conversationId,
+                userId: mentionedUserId,
+                isActive: true,
+              },
+            });
+            
+            if (isParticipant) {
+              const sender = await getUserInfo(socket.data.user.id);
+              if (sender) {
+                await NotificationService.createNotification({
+                  userId: mentionedUserId,
+                  type: 'MENTION',
+                  title: `You were mentioned by ${sender.name || 'Someone'}`,
+                  message: payload.content.substring(0, 100) + (payload.content.length > 100 ? '...' : ''),
+                  data: {
+                    conversationId: data.conversationId,
+                    messageId: message.id,
+                    senderId: socket.data.user.id,
+                  },
+                });
+              }
+            }
+          }
+        }
+
         // Broadcast to conversation using Socket.IO
         io.to(data.conversationId).emit('new_direct_message', {
           ...messageWithAttachments,
           createdAt: messageWithAttachments.createdAt.toISOString(),
           updatedAt: messageWithAttachments.updatedAt.toISOString(),
-          reactions: messageWithAttachments.reactions.map(reaction => ({
+          reactions: messageWithAttachments.reactions.map((reaction: { createdAt: Date }) => ({
             ...reaction,
             createdAt: reaction.createdAt.toISOString(),
           })),
-          attachments: messageWithAttachments.attachments.map(attachment => ({
+          attachments: messageWithAttachments.attachments.map((attachment: { createdAt: Date }) => ({
             ...attachment,
             createdAt: attachment.createdAt.toISOString(),
+          })),
+          mentions: messageWithAttachments.mentions.map((mention: { id: string; userId: string; user: any; createdAt: Date }) => ({
+            id: mention.id,
+            userId: mention.userId,
+            user: mention.user,
+            createdAt: mention.createdAt.toISOString(),
           })),
         } as DirectMessageData);
         return;
       }
+    }
+
+    // Parse mentions from message content
+    const mentionedUserIds = parseMentionsFromHTML(payload.content);
+    
+    // Create mention records for mentioned users
+    if (mentionedUserIds.length > 0) {
+      await prisma.mention.createMany({
+        data: mentionedUserIds.map((userId: string) => ({
+          messageId: message.id,
+          userId: userId,
+        })),
+        skipDuplicates: true,
+      });
     }
 
     // Create notifications for conversation participants (except sender)
@@ -180,18 +263,100 @@ export const handleSendDirectMessage = async (
       payload.content
     );
 
+    // Create mention notifications for mentioned users (in direct messages)
+    for (const mentionedUserId of mentionedUserIds) {
+      if (mentionedUserId !== socket.data.user.id) {
+        const isParticipant = await prisma.conversationParticipant.findFirst({
+          where: {
+            conversationId: data.conversationId,
+            userId: mentionedUserId,
+            isActive: true,
+          },
+        });
+        
+        if (isParticipant) {
+          const sender = await getUserInfo(socket.data.user.id);
+          if (sender) {
+            await NotificationService.createNotification({
+              userId: mentionedUserId,
+              type: 'MENTION',
+              title: `You were mentioned by ${sender.name || 'Someone'}`,
+              message: payload.content.substring(0, 100) + (payload.content.length > 100 ? '...' : ''),
+              data: {
+                conversationId: data.conversationId,
+                messageId: message.id,
+                senderId: socket.data.user.id,
+              },
+            });
+          }
+        }
+      }
+    }
+
+    // Fetch message with mentions
+    const messageWithMentions = await prisma.message.findUnique({
+      where: { id: message.id },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            image: true,
+          },
+        },
+        replyTo: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+        attachments: true,
+        reactions: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+        mentions: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                image: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
     // Broadcast to conversation using Socket.IO
     io.to(data.conversationId).emit('new_direct_message', {
-      ...message,
-      createdAt: message.createdAt.toISOString(),
-      updatedAt: message.updatedAt.toISOString(),
-      reactions: message.reactions.map(reaction => ({
+      ...messageWithMentions!,
+      createdAt: messageWithMentions!.createdAt.toISOString(),
+      updatedAt: messageWithMentions!.updatedAt.toISOString(),
+      reactions: messageWithMentions!.reactions.map((reaction: { createdAt: Date }) => ({
         ...reaction,
         createdAt: reaction.createdAt.toISOString(),
       })),
-      attachments: message.attachments.map(attachment => ({
+      attachments: messageWithMentions!.attachments.map((attachment: { createdAt: Date }) => ({
         ...attachment,
         createdAt: attachment.createdAt.toISOString(),
+      })),
+      mentions: messageWithMentions!.mentions.map((mention: { id: string; userId: string; user: any; createdAt: Date }) => ({
+        id: mention.id,
+        userId: mention.userId,
+        user: mention.user,
+        createdAt: mention.createdAt.toISOString(),
       })),
     } as DirectMessageData);
 
@@ -524,11 +689,11 @@ export const handleForwardDirectMessage = async (
         ...originalMessage,
         createdAt: originalMessage.createdAt.toISOString(),
         updatedAt: originalMessage.updatedAt.toISOString(),
-        reactions: originalMessage.reactions.map(reaction => ({
+        reactions: originalMessage.reactions.map((reaction: { createdAt: Date }) => ({
           ...reaction,
           createdAt: reaction.createdAt.toISOString(),
         })),
-        attachments: originalMessage.attachments.map(attachment => ({
+        attachments: originalMessage.attachments.map((attachment: { createdAt: Date }) => ({
           ...attachment,
           createdAt: attachment.createdAt.toISOString(),
         })),

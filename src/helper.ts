@@ -116,7 +116,7 @@ export const isFileAttachmentsEnabledForConversation = async (conversationId: st
         // Check if all participants have at least one workspace with attachments enabled
         for (const participant of participants) {
             const hasEnabledWorkspace = participant.user.workspaces.some(
-                workspace => workspace.fileAttachmentsEnabled
+                (workspace: { fileAttachmentsEnabled: boolean }) => workspace.fileAttachmentsEnabled
             );
             
             if (!hasEnabledWorkspace) {
@@ -129,4 +129,26 @@ export const isFileAttachmentsEnabledForConversation = async (conversationId: st
         console.error('Error checking file attachments setting for conversation:', error);
         return true; // Default to true on error
     }
+}
+
+/**
+ * Parse mention user IDs from HTML content
+ * Extracts user IDs from mention tags in format: <span data-type="mention" data-id="userId">...</span>
+ * @param htmlContent - The HTML content containing mentions
+ * @returns Array of unique user IDs mentioned in the content
+ */
+export const parseMentionsFromHTML = (htmlContent: string): string[] => {
+    const mentionIds: string[] = [];
+    // Match mentions in format: <span data-type="mention" data-id="userId">...</span>
+    const mentionRegex = /<span[^>]*data-type=["']mention["'][^>]*data-id=["']([^"']+)["'][^>]*>/gi;
+    let match;
+
+    while ((match = mentionRegex.exec(htmlContent)) !== null) {
+        const userId = match[1];
+        if (userId && !mentionIds.includes(userId)) {
+            mentionIds.push(userId);
+        }
+    }
+
+    return mentionIds;
 }

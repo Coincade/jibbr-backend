@@ -3,7 +3,7 @@ import { broadcastToChannel, validateChannelMembership, getUserInfo } from '../u
 import { sendMessageSchema, updateMessageSchema } from '../../validation/message.validations.js';
 import { ZodError } from 'zod';
 import { NotificationService } from '../../services/notification.service.js';
-import { isFileAttachmentsEnabledForChannel } from '../../helper.js';
+import { isFileAttachmentsEnabledForChannel, parseMentionsFromHTML } from '../../helper.js';
 
 /**
  * Handle send message event
@@ -118,7 +118,21 @@ export const handleSendMessage = async (
         data: attachmentData,
       });
 
-      // Fetch the message again with attachments
+      // Parse mentions from message content
+      const mentionedUserIds = parseMentionsFromHTML(payload.content);
+      
+      // Create mention records for mentioned users
+      if (mentionedUserIds.length > 0) {
+        await prisma.mention.createMany({
+          data: mentionedUserIds.map((userId: string) => ({
+            messageId: message.id,
+            userId: userId,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      // Fetch the message again with attachments and mentions
       const messageWithAttachments = await prisma.message.findUnique({
         where: { id: message.id },
         include: {
@@ -150,27 +164,90 @@ export const handleSendMessage = async (
               },
             },
           },
+          mentions: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  image: true,
+                },
+              },
+            },
+          },
         },
       });
 
       if (messageWithAttachments) {
+        // Get channel info for notifications
+        const channel = await prisma.channel.findUnique({
+          where: { id: data.channelId },
+          select: { name: true },
+        });
+
+        // Create notifications for channel members (except sender)
+        if (channel) {
+          await NotificationService.notifyNewChannelMessage(
+            data.channelId!,
+            message.id,
+            socket.data.user.id,
+            payload.content,
+            channel.name
+          );
+          
+          // Create mention notifications for mentioned users
+          for (const mentionedUserId of mentionedUserIds) {
+            if (mentionedUserId !== socket.data.user.id) {
+              await NotificationService.notifyMention(
+                data.channelId!,
+                message.id,
+                mentionedUserId,
+                socket.data.user.id,
+                payload.content,
+                channel.name
+              );
+            }
+          }
+        }
+
         // Broadcast to channel using Socket.IO (to everyone, including sender)
         io.to(data.channelId!).emit('new_message', {
           ...messageWithAttachments,
           createdAt: messageWithAttachments.createdAt.toISOString(),
           updatedAt: messageWithAttachments.updatedAt.toISOString(),
-          reactions: messageWithAttachments.reactions.map(reaction => ({
+          reactions: messageWithAttachments.reactions.map((reaction: { createdAt: Date }) => ({
             ...reaction,
             createdAt: reaction.createdAt.toISOString(),
           })),
-          attachments: messageWithAttachments.attachments.map(attachment => ({
+          attachments: messageWithAttachments.attachments.map((attachment: { createdAt: Date }) => ({
             ...attachment,
             createdAt: attachment.createdAt.toISOString(),
+          })),
+          mentions: messageWithAttachments.mentions.map((mention: { id: string; userId: string; user: any; createdAt: Date }) => ({
+            id: mention.id,
+            userId: mention.userId,
+            user: mention.user,
+            createdAt: mention.createdAt.toISOString(),
           })),
         } as MessageData);
         return;
       }
     }
+    
+    // Parse mentions from message content
+    const mentionedUserIds = parseMentionsFromHTML(payload.content);
+    
+    // Create mention records for mentioned users
+    if (mentionedUserIds.length > 0) {
+      await prisma.mention.createMany({
+        data: mentionedUserIds.map((userId: string) => ({
+          messageId: message.id,
+          userId: userId,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
     // Get channel info for notifications
     const channel = await prisma.channel.findUnique({
       where: { id: data.channelId },
@@ -186,20 +263,87 @@ export const handleSendMessage = async (
         payload.content,
         channel.name
       );
+      
+      // Create mention notifications for mentioned users
+      for (const mentionedUserId of mentionedUserIds) {
+        // Don't notify if user mentioned themselves
+        if (mentionedUserId !== socket.data.user.id) {
+          await NotificationService.notifyMention(
+            data.channelId!,
+            message.id,
+            mentionedUserId,
+            socket.data.user.id,
+            payload.content,
+            channel.name
+          );
+        }
+      }
     }
+
+    // Fetch message with mentions
+    const messageWithMentions = await prisma.message.findUnique({
+      where: { id: message.id },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            image: true,
+          },
+        },
+        replyTo: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+        attachments: true,
+        reactions: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+        mentions: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                image: true,
+              },
+            },
+          },
+        },
+      },
+    });
 
     // Broadcast to channel using Socket.IO (to everyone, including sender)
     io.to(data.channelId!).emit('new_message', {
-      ...message,
-      createdAt: message.createdAt.toISOString(),
-      updatedAt: message.updatedAt.toISOString(),
-      reactions: message.reactions.map(reaction => ({
+      ...messageWithMentions!,
+      createdAt: messageWithMentions!.createdAt.toISOString(),
+      updatedAt: messageWithMentions!.updatedAt.toISOString(),
+      reactions: messageWithMentions!.reactions.map((reaction: { createdAt: Date }) => ({
         ...reaction,
         createdAt: reaction.createdAt.toISOString(),
       })),
-      attachments: message.attachments.map(attachment => ({
+      attachments: messageWithMentions!.attachments.map((attachment: { createdAt: Date }) => ({
         ...attachment,
         createdAt: attachment.createdAt.toISOString(),
+      })),
+      mentions: messageWithMentions!.mentions.map((mention: { id: string; userId: string; user: any; createdAt: Date }) => ({
+        id: mention.id,
+        userId: mention.userId,
+        user: mention.user,
+        createdAt: mention.createdAt.toISOString(),
       })),
     } as MessageData);
 
@@ -393,11 +537,11 @@ export const handleForwardMessage = async (
         ...originalMessage,
         createdAt: originalMessage.createdAt.toISOString(),
         updatedAt: originalMessage.updatedAt.toISOString(),
-        reactions: originalMessage.reactions.map(reaction => ({
+        reactions: originalMessage.reactions.map((reaction: { createdAt: Date }) => ({
           ...reaction,
           createdAt: reaction.createdAt.toISOString(),
         })),
-        attachments: originalMessage.attachments.map(attachment => ({
+        attachments: originalMessage.attachments.map((attachment: { createdAt: Date }) => ({
           ...attachment,
           createdAt: attachment.createdAt.toISOString(),
         })),

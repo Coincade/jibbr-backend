@@ -8,6 +8,7 @@ import {
   sendDirectMessage,
   sendDirectMessageWithAttachments,
   deleteDirectMessage,
+  getMentionableUsers,
 } from "../controllers/conversation.controller.js";
 
 const router = express.Router();
@@ -33,5 +34,8 @@ router.post("/:conversationId/messages/with-attachments",
 
 // Delete direct message (Soft Delete)
 router.delete("/:conversationId/messages/:messageId", authMiddleware as unknown as RequestHandler, deleteDirectMessage as unknown as RequestHandler);
+
+// Get mentionable users for a conversation
+router.get("/:conversationId/mentionable-users", authMiddleware as unknown as RequestHandler, getMentionableUsers as unknown as RequestHandler);
 
 export default router; 
