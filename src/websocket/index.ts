@@ -252,7 +252,7 @@ const handleSendMessageEvent = async (socket: Socket, data: any): Promise<void> 
 
 const handleEditMessageEvent = async (socket: Socket, data: any): Promise<void> => {
   try {
-    await handleEditMessage(socket, data, channelClients);
+    await handleEditMessage(socket, data, channelClients, io);
   } catch (error) {
     console.error('Error handling edit message:', error);
     socket.emit('error', { message: 'Failed to edit message' });

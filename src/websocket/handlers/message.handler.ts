@@ -4,6 +4,7 @@ import { sendMessageSchema, updateMessageSchema } from '../../validation/message
 import { ZodError } from 'zod';
 import { NotificationService } from '../../services/notification.service.js';
 import { isFileAttachmentsEnabledForChannel } from '../../helper.js';
+import { processMentions, createMentionsAndNotifications, updateMentionsForMessage } from '../../services/mention.service.js'; // [mentions]
 
 /**
  * Handle send message event
@@ -60,9 +61,17 @@ export const handleSendMessage = async (
       }
     }
     
+    // [mentions] Process mentions in content
+    const { sanitizedContent, mentionedUserIds } = await processMentions(
+      payload.content,
+      socket.data.user.id,
+      payload.channelId,
+      (data as any).jsonContent // Optional JSON content from TipTap
+    );
+
     // Prepare message data
     const messageData: any = {
-      content: payload.content,
+      content: sanitizedContent, // Use sanitized content
       channelId: payload.channelId,
       userId: socket.data.user.id,
       replyToId: payload.replyToId,
@@ -96,6 +105,17 @@ export const handleSendMessage = async (
               select: {
                 id: true,
                 name: true,
+              },
+            },
+          },
+        },
+        mentions: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                image: true,
               },
             },
           },
@@ -154,18 +174,79 @@ export const handleSendMessage = async (
       });
 
       if (messageWithAttachments) {
+        // [mentions] Create mention records and notifications
+        if (mentionedUserIds.length > 0) {
+          await createMentionsAndNotifications(
+            message.id,
+            data.channelId!,
+            mentionedUserIds,
+            socket.data.user.id,
+            io
+          );
+        }
+
+        // Fetch message again with mentions included
+        const messageWithMentions = await prisma.message.findUnique({
+          where: { id: message.id },
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                image: true,
+              },
+            },
+            replyTo: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
+              },
+            },
+            attachments: true,
+            reactions: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
+              },
+            },
+            mentions: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    image: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+
         // Broadcast to channel using Socket.IO (to everyone, including sender)
         io.to(data.channelId!).emit('new_message', {
-          ...messageWithAttachments,
-          createdAt: messageWithAttachments.createdAt.toISOString(),
-          updatedAt: messageWithAttachments.updatedAt.toISOString(),
-          reactions: messageWithAttachments.reactions.map(reaction => ({
+          ...messageWithMentions!,
+          createdAt: messageWithMentions!.createdAt.toISOString(),
+          updatedAt: messageWithMentions!.updatedAt.toISOString(),
+          reactions: messageWithMentions!.reactions.map(reaction => ({
             ...reaction,
             createdAt: reaction.createdAt.toISOString(),
           })),
-          attachments: messageWithAttachments.attachments.map(attachment => ({
+          attachments: messageWithMentions!.attachments.map(attachment => ({
             ...attachment,
             createdAt: attachment.createdAt.toISOString(),
+          })),
+          mentions: messageWithMentions!.mentions.map(mention => ({
+            ...mention,
+            createdAt: mention.createdAt.toISOString(),
           })),
         } as MessageData);
         return;
@@ -176,6 +257,17 @@ export const handleSendMessage = async (
       where: { id: data.channelId },
       select: { name: true },
     });
+
+    // [mentions] Create mention records and notifications
+    if (mentionedUserIds.length > 0) {
+      await createMentionsAndNotifications(
+        message.id,
+        data.channelId!,
+        mentionedUserIds,
+        socket.data.user.id,
+        io
+      );
+    }
 
     // Create notifications for channel members (except sender)
     if (channel) {
@@ -188,18 +280,68 @@ export const handleSendMessage = async (
       );
     }
 
+    // Fetch message again with mentions included
+    const messageWithMentions = await prisma.message.findUnique({
+      where: { id: message.id },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            image: true,
+          },
+        },
+        replyTo: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+        attachments: true,
+        reactions: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+        mentions: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                image: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
     // Broadcast to channel using Socket.IO (to everyone, including sender)
     io.to(data.channelId!).emit('new_message', {
-      ...message,
-      createdAt: message.createdAt.toISOString(),
-      updatedAt: message.updatedAt.toISOString(),
-      reactions: message.reactions.map(reaction => ({
+      ...messageWithMentions!,
+      createdAt: messageWithMentions!.createdAt.toISOString(),
+      updatedAt: messageWithMentions!.updatedAt.toISOString(),
+      reactions: messageWithMentions!.reactions.map(reaction => ({
         ...reaction,
         createdAt: reaction.createdAt.toISOString(),
       })),
-      attachments: message.attachments.map(attachment => ({
+      attachments: messageWithMentions!.attachments.map(attachment => ({
         ...attachment,
         createdAt: attachment.createdAt.toISOString(),
+      })),
+      mentions: messageWithMentions!.mentions.map(mention => ({
+        ...mention,
+        createdAt: mention.createdAt.toISOString(),
       })),
     } as MessageData);
 
@@ -219,7 +361,8 @@ export const handleSendMessage = async (
 export const handleEditMessage = async (
   socket: Socket,
   data: EditMessageMessage,
-  channelClients: ChannelClientsMap
+  channelClients: ChannelClientsMap,
+  io: any
 ): Promise<void> => {
   try {
     if (!socket.data.user) {
@@ -252,15 +395,32 @@ export const handleEditMessage = async (
       throw new Error('You can only edit your own messages');
     }
 
+    // [mentions] Process mentions in updated content
+    const { sanitizedContent, mentionedUserIds } = await processMentions(
+      payload.content,
+      socket.data.user.id,
+      message.channelId,
+      (data as any).jsonContent // Optional JSON content from TipTap
+    );
+
     await prisma.message.update({
       where: { id: data.messageId },
-      data: { content: payload.content },
+      data: { content: sanitizedContent }, // Use sanitized content
     });
+
+    // [mentions] Update mentions (remove old, add new)
+    await updateMentionsForMessage(
+      data.messageId,
+      message.channelId,
+      mentionedUserIds,
+      socket.data.user.id,
+      io
+    );
 
     // Broadcast to channel using Socket.IO
     socket.to(data.channelId!).emit('message_edited', {
       messageId: data.messageId,
-      content: payload.content,
+      content: sanitizedContent,
     });
 
   } catch (error) {
@@ -367,6 +527,17 @@ export const handleForwardMessage = async (
               select: {
                 id: true,
                 name: true,
+              },
+            },
+          },
+        },
+        mentions: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                image: true,
               },
             },
           },

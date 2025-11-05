@@ -2,6 +2,7 @@ import { formatError, isFileAttachmentsEnabledForChannel } from "../helper.js";
 import { Request, Response } from "express";
 import prisma from "../config/database.js";
 import { uploadToSpaces, deleteFromSpaces } from "../config/upload.js";
+import { processMentions, createMentionsAndNotifications, updateMentionsForMessage } from "../services/mention.service.js"; // [mentions]
 import {
   sendMessageSchema,
   reactToMessageSchema,
@@ -48,10 +49,18 @@ export const sendMessage = async (req: Request, res: Response) => {
       }
     }
 
+    // [mentions] Process mentions in content
+    const { sanitizedContent, mentionedUserIds } = await processMentions(
+      payload.content,
+      user.id,
+      payload.channelId,
+      (body as any).jsonContent // Optional JSON content from TipTap
+    );
+
     // Create the message
     const message = await prisma.message.create({
       data: {
-        content: payload.content,
+        content: sanitizedContent, // Use sanitized content
         channelId: payload.channelId,
         userId: user.id,
         replyToId: payload.replyToId,
@@ -85,8 +94,33 @@ export const sendMessage = async (req: Request, res: Response) => {
             },
           },
         },
+        mentions: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                image: true,
+              },
+            },
+          },
+        },
       },
     });
+
+    // [mentions] Create mention records and notifications (async, don't await)
+    if (mentionedUserIds.length > 0) {
+      // Get io instance - we'll need to pass it or get it from a singleton
+      // For now, we'll handle this in the websocket handler which has io access
+      // This HTTP endpoint will primarily be used for attachments, mentions will be handled via websocket
+      createMentionsAndNotifications(
+        message.id,
+        payload.channelId,
+        mentionedUserIds,
+        user.id,
+        null // io not available in HTTP controller, handled in websocket
+      ).catch(err => console.error('[mentions] Failed to process mentions:', err));
+    }
 
     return res.status(201).json({
       message: "Message sent successfully",
@@ -143,6 +177,14 @@ export const sendMessageWithAttachments = async (req: Request, res: Response) =>
       }
     }
 
+    // [mentions] Process mentions in content
+    const { sanitizedContent, mentionedUserIds } = await processMentions(
+      payload.content,
+      user.id,
+      payload.channelId,
+      (body as any).jsonContent // Optional JSON content from TipTap
+    );
+
     // Upload attachments if any
     const attachments = [];
     if (req.files && Array.isArray(req.files)) {
@@ -161,7 +203,7 @@ export const sendMessageWithAttachments = async (req: Request, res: Response) =>
     // Create the message with attachments
     const message = await prisma.message.create({
       data: {
-        content: payload.content,
+        content: sanitizedContent, // Use sanitized content
         channelId: payload.channelId,
         userId: user.id,
         replyToId: payload.replyToId,
@@ -198,8 +240,30 @@ export const sendMessageWithAttachments = async (req: Request, res: Response) =>
             },
           },
         },
+        mentions: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                image: true,
+              },
+            },
+          },
+        },
       },
     });
+
+    // [mentions] Create mention records and notifications (async, don't await)
+    if (mentionedUserIds.length > 0) {
+      createMentionsAndNotifications(
+        message.id,
+        payload.channelId,
+        mentionedUserIds,
+        user.id,
+        null // io not available in HTTP controller, handled in websocket
+      ).catch(err => console.error('[mentions] Failed to process mentions:', err));
+    }
 
     return res.status(201).json({
       message: "Message sent successfully",
@@ -270,6 +334,17 @@ export const getMessages = async (req: Request, res: Response) => {
               select: {
                 id: true,
                 name: true,
+              },
+            },
+          },
+        },
+        mentions: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                image: true,
               },
             },
           },
@@ -359,6 +434,17 @@ export const getMessage = async (req: Request, res: Response) => {
               select: {
                 id: true,
                 name: true,
+              },
+            },
+          },
+        },
+        mentions: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                image: true,
               },
             },
           },
@@ -460,10 +546,18 @@ export const updateMessage = async (req: Request, res: Response) => {
       return res.status(403).json({ message: "You are not a member of this channel" });
     }
 
+    // [mentions] Process mentions in updated content
+    const { sanitizedContent, mentionedUserIds } = await processMentions(
+      payload.content,
+      user.id,
+      message.channelId,
+      (body as any).jsonContent // Optional JSON content from TipTap
+    );
+
     const updatedMessage = await prisma.message.update({
       where: { id: payload.messageId },
       data: {
-        content: payload.content,
+        content: sanitizedContent, // Use sanitized content
       },
       include: {
         user: {
@@ -494,8 +588,28 @@ export const updateMessage = async (req: Request, res: Response) => {
             },
           },
         },
+        mentions: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                image: true,
+              },
+            },
+          },
+        },
       },
     });
+
+    // [mentions] Update mentions (remove old, add new) - always update to handle removal of mentions
+    updateMentionsForMessage(
+      payload.messageId,
+      message.channelId,
+      mentionedUserIds,
+      user.id,
+      null // io not available in HTTP controller
+    ).catch(err => console.error('[mentions] Failed to update mentions:', err));
 
     return res.status(200).json({
       message: "Message updated successfully",
@@ -896,6 +1010,108 @@ export const getForwardedMessages = async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+// [mentions] Get messages where current user is mentioned
+export const getMentions = async (req: Request, res: Response) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(422).json({ message: "User not found" });
+    }
+
+    const { cursor, limit = 20 } = req.query;
+    const take = Math.min(Number(limit) || 20, 100);
+
+    // Cursor-based pagination
+    let cursorWhere: any = {};
+    if (cursor) {
+      // Parse cursor: format is "createdAt:messageMentionId"
+      const [createdAtStr, mentionId] = (cursor as string).split(':');
+      cursorWhere = {
+        OR: [
+          {
+            createdAt: { lt: new Date(createdAtStr) }
+          },
+          {
+            createdAt: new Date(createdAtStr),
+            id: { lt: mentionId }
+          }
+        ]
+      };
+    }
+
+    // Get mentions for this user
+    const mentions = await prisma.messageMention.findMany({
+      where: {
+        userId: user.id,
+        ...cursorWhere
+      },
+      include: {
+        message: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                image: true,
+              },
+            },
+            channel: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            attachments: true,
+            reactions: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: [
+        { createdAt: 'desc' },
+        { id: 'desc' }
+      ],
+      take: take + 1, // Fetch one extra to determine if there's a next page
+    });
+
+    const hasNextPage = mentions.length > take;
+    const messages = hasNextPage ? mentions.slice(0, take) : mentions;
+
+    // Generate next cursor
+    let nextCursor: string | null = null;
+    if (hasNextPage && messages.length > 0) {
+      const lastMention = messages[messages.length - 1];
+      nextCursor = `${lastMention.createdAt.toISOString()}:${lastMention.id}`;
+    }
+
+    return res.status(200).json({
+      message: "Mentions fetched successfully",
+      data: {
+        messages: messages.map(m => ({
+          ...m.message,
+          createdAt: m.message.createdAt.toISOString(),
+          updatedAt: m.message.updatedAt.toISOString(),
+        })),
+        pagination: {
+          hasNextPage,
+          nextCursor,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('[mentions] Error fetching mentions:', error);
     return res.status(500).json({ message: "Internal server error" });
   }
 }; 

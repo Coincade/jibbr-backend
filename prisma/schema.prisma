@@ -38,6 +38,8 @@ model User {
   userNotifications UserNotification[]
   conversationReadStatuses ConversationReadStatus[]
   notificationPreferences UserNotificationPreference[]
+  // [mentions]
+  mentions MessageMention[]
 }
 
 model Workspace {
@@ -139,6 +141,8 @@ model Message {
   // Soft delete support
   deletedAt   DateTime?
   
+  // [mentions]
+  mentions    MessageMention[]
 
 }
 
@@ -265,4 +269,17 @@ model UserNotificationPreference {
   mentionNotifications  Boolean   @default(true)
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt @default(now())
+}
+
+// [mentions] Message mention tracking
+model MessageMention {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([messageId, userId])
+  @@index([userId, createdAt])
 }

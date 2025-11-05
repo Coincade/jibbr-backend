@@ -12,6 +12,7 @@ import {
   removeReaction,
   forwardMessage,
   getForwardedMessages,
+  getMentions, // [mentions]
 } from "../controllers/message.controller.js";
 
 const router = express.Router();
@@ -49,5 +50,8 @@ router.post("/forward", authMiddleware as unknown as RequestHandler, forwardMess
 
 // Get forwarded messages in a channel
 router.get("/forwarded/:channelId", authMiddleware as unknown as RequestHandler, getForwardedMessages as unknown as RequestHandler);
+
+// [mentions] Get messages where current user is mentioned
+router.get("/mentions", authMiddleware as unknown as RequestHandler, getMentions as unknown as RequestHandler);
 
 export default router;
