@@ -1099,7 +1099,7 @@ export const getMentions = async (req: Request, res: Response) => {
     return res.status(200).json({
       message: "Mentions fetched successfully",
       data: {
-        messages: messages.map(m => ({
+        messages: messages.map((m: any) => ({
           ...m.message,
           createdAt: m.message.createdAt.toISOString(),
           updatedAt: m.message.updatedAt.toISOString(),

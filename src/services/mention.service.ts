@@ -213,14 +213,14 @@ export async function updateMentionsForMessage(
     select: { userId: true }
   });
 
-  const existingUserIds = new Set(existingMentions.map(m => m.userId));
-  const newUserIds = new Set(newMentionedUserIds);
+  const existingUserIds = new Set<string>(existingMentions.map((m: { userId: string }) => m.userId));
+  const newUserIds = new Set<string>(newMentionedUserIds);
 
   // Find users to remove (were mentioned before, not mentioned now)
-  const usersToRemove = Array.from(existingUserIds).filter(id => !newUserIds.has(id));
+  const usersToRemove = Array.from(existingUserIds).filter((id: string) => !newUserIds.has(id));
   
   // Find users to add (not mentioned before, mentioned now)
-  const usersToAdd = Array.from(newUserIds).filter(id => !existingUserIds.has(id));
+  const usersToAdd = Array.from(newUserIds).filter((id: string) => !existingUserIds.has(id));
 
   // Remove old mentions
   if (usersToRemove.length > 0) {
