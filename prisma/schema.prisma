@@ -38,6 +38,7 @@ model User {
   userNotifications UserNotification[]
   conversationReadStatuses ConversationReadStatus[]
   notificationPreferences UserNotificationPreference[]
+  pushTokens   UserPushToken[]
   // [mentions]
   mentions MessageMention[]
 }
@@ -243,6 +244,12 @@ enum NotificationType {
   SYSTEM
 }
 
+enum PushPlatform {
+  IOS
+  ANDROID
+  UNKNOWN
+}
+
 // Track read status for conversations
 model ConversationReadStatus {
   id             String       @id @default(cuid())
@@ -282,4 +289,19 @@ model MessageMention {
 
   @@unique([messageId, userId])
   @@index([userId, createdAt])
+}
+
+model UserPushToken {
+  id          String       @id @default(cuid())
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token       String       @unique
+  platform    PushPlatform @default(UNKNOWN)
+  deviceName  String?
+  appVersion  String?
+  lastUsedAt  DateTime?    
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt @default(now())
+
+  @@index([userId, platform])
 }

@@ -23,6 +23,17 @@ const updateNotificationPreferencesSchema = z.object({
   mentionNotifications: z.boolean().optional(),
 });
 
+const registerPushTokenSchema = z.object({
+  pushToken: z.string().min(1, "Push token is required"),
+  platform: z.enum(["ios", "android"]).optional(),
+  deviceName: z.string().optional(),
+  appVersion: z.string().optional(),
+});
+
+const unregisterPushTokenSchema = z.object({
+  pushToken: z.string().min(1, "Push token is required"),
+});
+
 // Mark messages as read for a channel or conversation
 export const markAsRead = async (req: Request, res: Response) => {
   try {
@@ -387,3 +398,78 @@ export const updateNotificationPreferences = async (req: Request, res: Response)
     return res.status(500).json({ message: "Internal server error" });
   }
 }; 
+
+// Register push notification token for mobile devices
+export const registerPushToken = async (req: Request, res: Response) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(422).json({ message: "User not found" });
+    }
+
+    const payload = registerPushTokenSchema.parse(req.body);
+
+    const platform =
+      payload.platform === "ios"
+        ? "IOS"
+        : payload.platform === "android"
+        ? "ANDROID"
+        : "UNKNOWN";
+
+    await prisma.userPushToken.upsert({
+      where: { token: payload.pushToken },
+      update: {
+        userId: user.id,
+        platform,
+        deviceName: payload.deviceName,
+        appVersion: payload.appVersion,
+        lastUsedAt: new Date(),
+      },
+      create: {
+        token: payload.pushToken,
+        userId: user.id,
+        platform,
+        deviceName: payload.deviceName,
+        appVersion: payload.appVersion,
+        lastUsedAt: new Date(),
+      },
+    });
+
+    return res.status(200).json({ message: "Push token registered successfully" });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      const errors = formatError(error);
+      return res.status(422).json({ message: "Invalid data", errors });
+    }
+    console.error("Error in registerPushToken:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+// Unregister push token (e.g., on logout)
+export const unregisterPushToken = async (req: Request, res: Response) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(422).json({ message: "User not found" });
+    }
+
+    const payload = unregisterPushTokenSchema.parse(req.body);
+
+    await prisma.userPushToken.deleteMany({
+      where: {
+        token: payload.pushToken,
+        userId: user.id,
+      },
+    });
+
+    return res.status(200).json({ message: "Push token unregistered successfully" });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      const errors = formatError(error);
+      return res.status(422).json({ message: "Invalid data", errors });
+    }
+    console.error("Error in unregisterPushToken:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};

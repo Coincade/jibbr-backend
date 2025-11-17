@@ -8,6 +8,8 @@ import {
   markAllNotificationsAsRead,
   getNotificationPreferences,
   updateNotificationPreferences,
+  registerPushToken,
+  unregisterPushToken,
 } from "../controllers/notification.controller.js";
 
 const router = express.Router();
@@ -32,5 +34,11 @@ router.get("/preferences", authMiddleware as unknown as RequestHandler, getNotif
 
 // Update user notification preferences
 router.put("/preferences", authMiddleware as unknown as RequestHandler, updateNotificationPreferences as unknown as RequestHandler);
+
+// Register push tokens for mobile devices
+router.post("/register-push-token", authMiddleware as unknown as RequestHandler, registerPushToken as unknown as RequestHandler);
+
+// Unregister push tokens
+router.post("/unregister-push-token", authMiddleware as unknown as RequestHandler, unregisterPushToken as unknown as RequestHandler);
 
 export default router; 

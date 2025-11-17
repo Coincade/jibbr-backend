@@ -1,4 +1,5 @@
 import prisma from "../config/database.js";
+import PushService from "./push.service.js";
 
 export interface NotificationData {
   id: string;
@@ -11,6 +12,23 @@ export interface NotificationData {
 }
 
 export class NotificationService {
+  private static sanitizeMessagePreview(messageContent?: string | null) {
+    if (!messageContent) {
+      return "Sent an attachment";
+    }
+
+    const text = messageContent
+      .replace(/<[^>]*>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (!text.length) {
+      return "Sent an attachment";
+    }
+
+    return text.length > 120 ? `${text.substring(0, 117)}...` : text;
+  }
+
   /**
    * Increment unread count for a channel
    */
@@ -115,6 +133,12 @@ export class NotificationService {
             select: {
               id: true,
               name: true,
+              pushTokens: {
+                select: { token: true },
+              },
+              notificationPreferences: {
+                select: { pushNotifications: true },
+              },
             },
           },
         },
@@ -126,6 +150,8 @@ export class NotificationService {
         select: { name: true },
       });
 
+      const preview = NotificationService.sanitizeMessagePreview(messageContent);
+
       // Create notifications for all members
       for (const member of channelMembers) {
         // Increment unread count
@@ -136,7 +162,7 @@ export class NotificationService {
           userId: member.userId,
           type: 'NEW_MESSAGE',
           title: `New message in #${channelName}`,
-          message: `${sender?.name || 'Someone'} sent: ${messageContent.substring(0, 100)}${messageContent.length > 100 ? '...' : ''}`,
+          message: `${sender?.name || 'Someone'}: ${preview}`,
           data: {
             channelId,
             messageId,
@@ -144,6 +170,22 @@ export class NotificationService {
             channelName,
           },
         });
+
+        const pushPreference = member.user.notificationPreferences[0]?.pushNotifications ?? true;
+        const tokens = member.user.pushTokens?.map((tokenRecord) => tokenRecord.token) ?? [];
+
+        if (pushPreference && tokens.length) {
+          await PushService.sendToTokens(tokens, {
+            title: `New message in #${channelName}`,
+            body: `${sender?.name || 'Someone'}: ${preview}`,
+            data: {
+              channelId,
+              messageId,
+              senderId,
+              type: 'channel',
+            },
+          });
+        }
       }
     } catch (error) {
       console.error('Error notifying new channel message:', error);
@@ -172,6 +214,12 @@ export class NotificationService {
             select: {
               id: true,
               name: true,
+              pushTokens: {
+                select: { token: true },
+              },
+              notificationPreferences: {
+                select: { pushNotifications: true },
+              },
             },
           },
         },
@@ -183,6 +231,8 @@ export class NotificationService {
         select: { name: true },
       });
 
+      const preview = NotificationService.sanitizeMessagePreview(messageContent);
+
       // Create notifications for all participants
       for (const participant of participants) {
         // Increment unread count
@@ -193,7 +243,7 @@ export class NotificationService {
           userId: participant.userId,
           type: 'NEW_MESSAGE',
           title: `New message from ${sender?.name || 'Someone'}`,
-          message: messageContent.substring(0, 100) + (messageContent.length > 100 ? '...' : ''),
+          message: preview,
           data: {
             conversationId,
             messageId,
@@ -201,6 +251,22 @@ export class NotificationService {
             senderName: sender?.name,
           },
         });
+
+        const pushPreference = participant.user.notificationPreferences[0]?.pushNotifications ?? true;
+        const tokens = participant.user.pushTokens?.map((tokenRecord) => tokenRecord.token) ?? [];
+
+        if (pushPreference && tokens.length) {
+          await PushService.sendToTokens(tokens, {
+            title: `New message from ${sender?.name || 'Someone'}`,
+            body: preview,
+            data: {
+              conversationId,
+              messageId,
+              senderId,
+              type: 'direct',
+            },
+          });
+        }
       }
     } catch (error) {
       console.error('Error notifying new direct message:', error);
@@ -225,12 +291,14 @@ export class NotificationService {
         select: { name: true },
       });
 
+      const preview = NotificationService.sanitizeMessagePreview(messageContent);
+
       // Create mention notification
       await this.createNotification({
         userId: mentionedUserId,
         type: 'MENTION',
         title: `You were mentioned in #${channelName}`,
-        message: `${sender?.name || 'Someone'} mentioned you: ${messageContent.substring(0, 100)}${messageContent.length > 100 ? '...' : ''}`,
+        message: `${sender?.name || 'Someone'} mentioned you: ${preview}`,
         data: {
           channelId,
           messageId,
@@ -238,6 +306,35 @@ export class NotificationService {
           channelName,
         },
       });
+
+      const targetUser = await prisma.user.findUnique({
+        where: { id: mentionedUserId },
+        select: {
+          pushTokens: { select: { token: true } },
+          notificationPreferences: {
+            select: { pushNotifications: true, mentionNotifications: true },
+          },
+        },
+      });
+
+      const pushPreference =
+        targetUser?.notificationPreferences[0]?.pushNotifications ?? true;
+      const mentionPreference =
+        targetUser?.notificationPreferences[0]?.mentionNotifications ?? true;
+      const tokens = targetUser?.pushTokens?.map((record) => record.token) ?? [];
+
+      if (pushPreference && mentionPreference && tokens.length) {
+        await PushService.sendToTokens(tokens, {
+          title: `Mentioned in #${channelName}`,
+          body: `${sender?.name || 'Someone'}: ${preview}`,
+          data: {
+            channelId,
+            messageId,
+            senderId,
+            type: 'mention',
+          },
+        });
+      }
     } catch (error) {
       console.error('Error notifying mention:', error);
     }
@@ -270,7 +367,7 @@ export class NotificationService {
         ? `Reaction in #${channelName}`
         : 'New reaction to your message';
 
-      await this.createNotification({
+      const notification = await this.createNotification({
         userId: messageOwnerId,
         type: 'REACTION',
         title,
@@ -283,6 +380,32 @@ export class NotificationService {
           conversationId,
         },
       });
+
+      const targetUser = await prisma.user.findUnique({
+        where: { id: messageOwnerId },
+        select: {
+          pushTokens: { select: { token: true } },
+          notificationPreferences: { select: { pushNotifications: true } },
+        },
+      });
+
+      const pushPreference =
+        targetUser?.notificationPreferences[0]?.pushNotifications ?? true;
+      const tokens = targetUser?.pushTokens?.map((record) => record.token) ?? [];
+
+      if (pushPreference && tokens.length) {
+        await PushService.sendToTokens(tokens, {
+          title,
+          body: `${reactor?.name || 'Someone'} reacted with ${emoji}`,
+          data: {
+            messageId,
+            reactionId: notification.id,
+            channelName,
+            conversationId,
+            type: 'reaction',
+          },
+        });
+      }
     } catch (error) {
       console.error('Error notifying reaction:', error);
     }
