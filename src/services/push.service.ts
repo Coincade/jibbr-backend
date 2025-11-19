@@ -63,6 +63,9 @@ export class PushService {
         body: payload.body,
         data: payload.data || {},
         priority: "high",
+        badge: 1, // iOS badge count
+        channelId: "default", // Android channel ID
+        ttl: 86400, // 24 hours - ensures notification is delivered even if device is offline
       });
     }
 
