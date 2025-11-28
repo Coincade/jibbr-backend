@@ -1,7 +1,5 @@
 import multer from 'multer';
 import AWS from 'aws-sdk';
-import { Request } from 'express';
-import path from 'path';
 
 // Configure AWS SDK for Digital Ocean Spaces
 const spacesEndpoint = new AWS.Endpoint(process.env.DO_SPACES_ENDPOINT || 'nyc3.digitaloceanspaces.com');
@@ -14,35 +12,9 @@ const s3 = new AWS.S3({
 // Configure multer for memory storage
 const storage = multer.memoryStorage();
 
-// File filter function
-const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-  // Allow images, documents, and common file types
-  const allowedMimeTypes = [
-    'image/jpeg',
-    'image/png',
-    'image/gif',
-    'image/webp',
-    'application/pdf',
-    'application/msword',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/vnd.ms-excel',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'text/plain',
-    'application/zip',
-    'application/x-rar-compressed'
-  ];
-
-  if (allowedMimeTypes.includes(file.mimetype)) {
-    cb(null, true);
-  } else {
-    cb(new Error('Invalid file type. Only images, documents, and common file types are allowed.'));
-  }
-};
-
-// Configure multer
+// Configure multer - allow all file types
 export const upload = multer({
   storage: storage,
-  fileFilter: fileFilter,
   limits: {
     fileSize: 50 * 1024 * 1024, // 50MB limit
     files: 5 // Maximum 5 files per request

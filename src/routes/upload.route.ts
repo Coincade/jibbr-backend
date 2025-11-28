@@ -5,34 +5,12 @@ import authMiddleware from '../middleware/Auth.middleware.js';
 
 const router = express.Router();
 
-// Configure multer for memory storage
+// Configure multer for memory storage - allow all file types
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 50 * 1024 * 1024, // 50MB limit
     files: 5 // Max 5 files
-  },
-  fileFilter: (req, file, cb) => {
-    // Allow common file types
-    const allowedMimeTypes = [
-      'image/jpeg',
-      'image/png',
-      'image/gif',
-      'image/webp',
-      'application/pdf',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/vnd.ms-excel',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'text/plain',
-      'text/csv'
-    ];
-
-    if (allowedMimeTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error(`File type ${file.mimetype} is not allowed`));
-    }
   }
 });
 
