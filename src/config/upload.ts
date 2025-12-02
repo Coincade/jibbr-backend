@@ -2,7 +2,10 @@ import multer from 'multer';
 import AWS from 'aws-sdk';
 
 // Configure AWS SDK for Digital Ocean Spaces
-const spacesEndpoint = new AWS.Endpoint(process.env.DO_SPACES_ENDPOINT || 'nyc3.digitaloceanspaces.com');
+// Extract hostname from URL if full URL is provided (e.g., https://blr1.digitaloceanspaces.com -> blr1.digitaloceanspaces.com)
+const endpointUrl = process.env.DO_SPACES_ENDPOINT || 'blr1.digitaloceanspaces.com';
+const endpointHostname = endpointUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
+const spacesEndpoint = new AWS.Endpoint(endpointHostname);
 const s3 = new AWS.S3({
   endpoint: spacesEndpoint,
   accessKeyId: process.env.DO_SPACES_KEY,
@@ -22,6 +25,8 @@ export const upload = multer({
 });
 
 // Upload file to Digital Ocean Spaces
+// Note: This is still used by message and conversation controllers for direct uploads
+// The standalone /api/upload endpoint has been moved to jibbr-upload-microservice
 export const uploadToSpaces = async (
   file: Express.Multer.File,
   folder: string = 'attachments'
@@ -89,4 +94,5 @@ export const deleteFromSpaces = async (fileUrl: string): Promise<void> => {
   }
 };
 
-export default upload; 
+export default upload;
+

@@ -31,7 +31,6 @@ import authRoutes from "./routes/auth.route.js";
 import messageRoutes from "./routes/message.route.js";
 import workspaceRoutes from "./routes/workspace.route.js";
 import channelRoutes from "./routes/channel.route.js";
-import uploadRoutes from "./routes/upload.route.js";
 import conversationRoutes from "./routes/conversation.route.js";
 import notificationRoutes from "./routes/notification.route.js";
 import presenceRoutes from "./routes/presence.route.js";
@@ -53,7 +52,7 @@ app.use("/api/messages", messageRoutes);
 // Note: /api/verify routes have been moved to jibbr-auth-microservice
 app.use("/api/workspace", workspaceRoutes);
 app.use("/api/channel", channelRoutes);
-app.use("/api/upload", uploadRoutes);
+// Note: /api/upload routes have been moved to jibbr-upload-microservice
 app.use("/api/conversations", conversationRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/presence", presenceRoutes);
