@@ -29,7 +29,6 @@ import cors from "cors";
 import ejs from "ejs";
 import authRoutes from "./routes/auth.route.js";
 import messageRoutes from "./routes/message.route.js";
-import verifyRoutes from "./routes/verify.route.js";
 import workspaceRoutes from "./routes/workspace.route.js";
 import channelRoutes from "./routes/channel.route.js";
 import uploadRoutes from "./routes/upload.route.js";
@@ -51,7 +50,7 @@ app.use(express.urlencoded({ extended: false }));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/messages", messageRoutes);
-app.use("/api/verify", verifyRoutes);
+// Note: /api/verify routes have been moved to jibbr-auth-microservice
 app.use("/api/workspace", workspaceRoutes);
 app.use("/api/channel", channelRoutes);
 app.use("/api/upload", uploadRoutes);
